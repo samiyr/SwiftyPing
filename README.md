@@ -30,3 +30,6 @@ Just drop the SwiftyPing.swift file to your project.
 
 ### Future development and contributions
 I made this project based on what I need, so I probably won't be adding any features unless I really need them. I will maintain it (meaning bug fixes and support for new Swift versions) for some time at least. However, you can submit a pull request and I'll take a look. Please try to keep the overall coding style.
+
+### License
+Use pretty much however you want. Officially licensed under MIT.
