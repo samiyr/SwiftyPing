@@ -356,7 +356,9 @@ enum ICMPType: UInt8{
 
 @inline(__always) func ICMPPackageCreate(identifier: UInt16, sequenceNumber: UInt16, payloadSize: UInt32) -> NSData? {
     func memoryCopy(_ dest: UnsafeMutableRawPointer, _ destOffset: Int, _ source: UnsafeRawPointer, _ sourceOffset: Int, _ length: Int) {
-        memcpy(dest.advanced(by: destOffset), source.advanced(by: sourceOffset), length)
+        // Using the length parameter here causes a buffer overflow, so a workaround is to use a fixed length that's tested not cause one.
+        // No idea why the overflow happens, if anyone smarter can figure it out, please add a pull request!
+        dest.advanced(by: destOffset).copyMemory(from: source.advanced(by: sourceOffset), byteCount: 23)
     }
     
     let packet = "\(arc4random()) winter is coming 117756a281bdee4ce28e12ec901b12fd2615da462cbdaff8567b298dd4092860 ddc4d6e2c9dbde340ca758450cb33348c5b7efac3ed2ced0667991a801d5132b 216b1ef275ed1daf013effd381ae3d523839765d97653e5b3766baf7a96f72a7 bc42b4c4fa92741af81e06e1702e800ee13a4b0715e2efdb43c5b5e975adf864"
