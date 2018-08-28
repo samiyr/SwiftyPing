@@ -101,17 +101,15 @@ public class SwiftyPing: NSObject {
         
         super.init()
 
-        var context = CFSocketContext()
-        context.version = 0
-        context.info = unsafeBitCast(self, to: UnsafeMutableRawPointer.self)
+        var context = CFSocketContext(version: 0,
+                                      info: Unmanaged.passRetained(self).toOpaque(),
+                                      retain: nil,
+                                      release: nil,
+                                      copyDescription: nil)
         
         self.socket = CFSocketCreate(kCFAllocatorDefault, AF_INET, SOCK_DGRAM, IPPROTO_ICMP, CFSocketCallBackType.dataCallBack.rawValue, { socket, type, address, data, info in
-            guard let socket = socket else { return }
-            var info = info
-            let ping = withUnsafePointer(to: &info) { (temp) in
-                return unsafeBitCast(temp, to: SwiftyPing.self)
-            }
-            
+            guard let socket = socket, let info = info else { return }
+            let ping: SwiftyPing = Unmanaged.fromOpaque(info).takeUnretainedValue()
             if (type as CFSocketCallBackType) == CFSocketCallBackType.dataCallBack {
                 let fData = data?.assumingMemoryBound(to: UInt8.self)
                 let bytes = UnsafeBufferPointer<UInt8>(start: fData, count: MemoryLayout<UInt8>.size)
