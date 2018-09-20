@@ -354,7 +354,34 @@ enum ICMPType: UInt8{
 
 // package creation
 
-@inline(__always) func ICMPPackageCreate(identifier: UInt16, sequenceNumber: UInt16, payloadSize: UInt32) -> NSData? {
+func ICMPPackageCreate(identifier:UInt16, sequenceNumber: UInt16, payloadSize: UInt32)-> NSData? {
+    let packageDebug = false  // triggers print statements below
+    
+    var icmpType:UInt8 = ICMPType.EchoRequest.rawValue
+    var icmpCode:UInt8 = 0
+    var icmpChecksum:UInt16 = 0
+    var icmpIdentifier:UInt16 = identifier
+    var icmpSequence:UInt16 = sequenceNumber
+    
+    var packet:String = "baadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaad"
+    var payload:NSData = NSData(data: packet.data(using: String.Encoding.utf8)!)
+    payload = payload.subdata(with: NSMakeRange(0, Int(payloadSize))) as NSData
+    let package:NSMutableData = NSMutableData(capacity: MemoryLayout<ICMPHeader>.size+payload.length)!
+    package.replaceBytes(in: NSMakeRange(0, 1), withBytes: &icmpType)
+    package.replaceBytes(in: NSMakeRange(1, 1), withBytes: &icmpCode)
+    package.replaceBytes(in: NSMakeRange(2, 2), withBytes: &icmpChecksum)
+    package.replaceBytes(in: NSMakeRange(4, 2), withBytes: &icmpIdentifier)
+    package.replaceBytes(in: NSMakeRange(6, 2), withBytes: &icmpSequence)
+    package.replaceBytes(in: NSMakeRange(8, payload.length), withBytes: payload.bytes)
+    
+    let bytes = package.mutableBytes
+    icmpChecksum = checkSum(buffer: bytes, bufLen: package.length)
+    package.replaceBytes(in: NSMakeRange(2, 2), withBytes: &icmpChecksum)
+    if packageDebug { print("ping package: \(package)") }
+    return package
+}
+
+/*@inline(__always) func ICMPPackageCreate(identifier: UInt16, sequenceNumber: UInt16, payloadSize: UInt32) -> NSData? {
     func memoryCopy(_ dest: UnsafeMutableRawPointer, _ destOffset: Int, _ source: UnsafeRawPointer, _ sourceOffset: Int, _ length: Int) {
         // Using the length parameter here causes a buffer overflow, so a workaround is to use a fixed length that's tested not cause one.
         // No idea why the overflow happens, if anyone smarter can figure it out, please add a pull request!
@@ -396,7 +423,7 @@ enum ICMPType: UInt8{
     package.replaceBytes(in: NSMakeRange(byteBuffer.count, payload.length), withBytes: payload.bytes)
     
     return package
-}
+}*/
 
 @inline(__always) func ICMPExtractResponseFromData(data: NSData, ipHeaderData: AutoreleasingUnsafeMutablePointer<NSData?>, ipData: AutoreleasingUnsafeMutablePointer<NSData?>, icmpHeaderData: AutoreleasingUnsafeMutablePointer<NSData?>, icmpData: AutoreleasingUnsafeMutablePointer<NSData?>) -> Bool {
     
