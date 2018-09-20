@@ -354,47 +354,31 @@ enum ICMPType: UInt8{
 
 // package creation
 
-@inline(__always) func ICMPPackageCreate(identifier: UInt16, sequenceNumber: UInt16, payloadSize: UInt32) -> NSData? {
-    func memoryCopy(_ dest: UnsafeMutableRawPointer, _ destOffset: Int, _ source: UnsafeRawPointer, _ sourceOffset: Int, _ length: Int) {
-        // Using the length parameter here causes a buffer overflow, so a workaround is to use a fixed length that's tested not cause one.
-        // No idea why the overflow happens, if anyone smarter can figure it out, please add a pull request!
-        dest.advanced(by: destOffset).copyMemory(from: source.advanced(by: sourceOffset), byteCount: 23)
-    }
+func ICMPPackageCreate(identifier:UInt16, sequenceNumber: UInt16, payloadSize: UInt32)-> NSData? {
+    let packageDebug = false  // triggers print statements below
     
-    let packet = "\(arc4random()) winter is coming 117756a281bdee4ce28e12ec901b12fd2615da462cbdaff8567b298dd4092860 ddc4d6e2c9dbde340ca758450cb33348c5b7efac3ed2ced0667991a801d5132b 216b1ef275ed1daf013effd381ae3d523839765d97653e5b3766baf7a96f72a7 bc42b4c4fa92741af81e06e1702e800ee13a4b0715e2efdb43c5b5e975adf864"
-
-    // Construct the ping packet.
-    var payload = NSData(data: packet.data(using: .utf8)!)
-    payload = payload.subdata(with: NSMakeRange(0, Int(payloadSize))) as NSData
-    let package = NSMutableData(capacity: MemoryLayout<ICMPHeader>.size + payload.length)!
+    var icmpType = ICMPType.EchoRequest.rawValue
+    var icmpCode: UInt8 = 0
+    var icmpChecksum: UInt16 = 0
+    var icmpIdentifier = identifier
+    var icmpSequence = sequenceNumber
     
-    let mutableBytes = package.mutableBytes;
-    let header = mutableBytes.assumingMemoryBound(to: ICMPHeader.self).pointee
-    
-    var icmpHeader = header
-    
-    icmpHeader.type = ICMPType.EchoRequest.rawValue
-    icmpHeader.code = 0
-    icmpHeader.checkSum = 0
-    icmpHeader.identifier = CFSwapInt16HostToBig(identifier)
-    icmpHeader.sequenceNumber = CFSwapInt16HostToBig(sequenceNumber)
-    memoryCopy(&icmpHeader, 1, payload.bytes, 0, payload.length)
-    
-    // The IP checksum returns a 16-bit number that's already in correct byte order
-    // (due to wacky 1's complement maths), so we just put it into the packet as a
-    // 16-bit unit.
+    let packet = "baadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaad"
+    guard let packetData = packet.data(using: .utf8) else { return nil }
+    var payload = NSData(data: packetData)
+    payload = payload.subdata(with: NSRange(location: 0, length: Int(payloadSize))) as NSData
+    guard let package = NSMutableData(capacity: MemoryLayout<ICMPHeader>.size + payload.length) else { return nil }
+    package.replaceBytes(in: NSRange(location: 0, length: 1), withBytes: &icmpType)
+    package.replaceBytes(in: NSRange(location: 1, length: 1), withBytes: &icmpCode)
+    package.replaceBytes(in: NSRange(location: 2, length: 2), withBytes: &icmpChecksum)
+    package.replaceBytes(in: NSRange(location: 4, length: 2), withBytes: &icmpIdentifier)
+    package.replaceBytes(in: NSRange(location: 6, length: 2), withBytes: &icmpSequence)
+    package.replaceBytes(in: NSRange(location: 8, length: payload.length), withBytes: payload.bytes)
     
     let bytes = package.mutableBytes
-    
-    icmpHeader.checkSum = checkSum(buffer: bytes, bufLen: package.length)
-    
-    var byteBuffer = [UInt8]()
-    withUnsafeBytes(of: &icmpHeader) {
-        (bytes: UnsafeRawBufferPointer) in byteBuffer += bytes
-    }
-    package.replaceBytes(in: NSMakeRange(0, byteBuffer.count), withBytes: byteBuffer)
-    package.replaceBytes(in: NSMakeRange(byteBuffer.count, payload.length), withBytes: payload.bytes)
-    
+    icmpChecksum = checkSum(buffer: bytes, bufLen: package.length)
+    package.replaceBytes(in: NSRange(location: 2, length: 2), withBytes: &icmpChecksum)
+    if packageDebug { print("ping package: \(package)") }
     return package
 }
 
