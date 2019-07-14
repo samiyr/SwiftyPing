@@ -15,6 +15,12 @@ public typealias ErrorClosure = ((_ ping: SwiftyPing, _ error: NSError) -> Void)
 // MARK: SwiftyPing
 
 public class SwiftyPing: NSObject {
+    public enum PingError: Error {
+        case hostLookup
+        case hostLookupUnknown
+        case addressLookup
+        case hostNotFound
+    }
     
     var host: String
     var ip: String
@@ -54,42 +60,39 @@ public class SwiftyPing: NSObject {
             ping.socket(socket: socket, didReadData: cfdata)
         }
     }
-    class func getIPv4AddressFromHost(host: String) -> (data: Data?, error: NSError?) {
+    class func getIPv4AddressFromHost(host: String) throws -> Data {
         var streamError = CFStreamError()
         let cfhost = CFHostCreateWithName(nil, host as CFString).takeRetainedValue()
         let status = CFHostStartInfoResolution(cfhost, .addresses, &streamError)
         
         var data: Data?
-        if !status {
+        guard status else {
             if Int32(streamError.domain)  == kCFStreamErrorDomainNetDB {
-                return (nil, NSError(domain: kCFErrorDomainCFNetwork as String, code: Int(CFNetworkErrors.cfHostErrorUnknown.rawValue), userInfo: [kCFGetAddrInfoFailureKey as String : "error in host name or address lookup"]))
+                throw PingError.hostLookup
             } else {
-                return (nil, NSError(domain: kCFErrorDomainCFNetwork as String, code: Int(CFNetworkErrors.cfHostErrorUnknown.rawValue), userInfo: nil))
-            }
-        } else {
-            var success: DarwinBoolean = false
-            guard let addresses = CFHostGetAddressing(cfhost, &success)?.takeUnretainedValue() as? [Data] else {
-                return (nil, NSError(domain: kCFErrorDomainCFNetwork as String, code: Int(CFNetworkErrors.cfHostErrorHostNotFound.rawValue) , userInfo: [NSLocalizedDescriptionKey:"failed to retrieve the known addresses from the given host"]))
-            }
-            
-            for address in addresses {
-                let addrin = address.socketAddress
-                if address.count >= MemoryLayout<sockaddr>.size && addrin.sa_family == UInt8(AF_INET) {
-                    data = address
-                    break
-                }
-            }
-            
-            if data?.count == 0 || data == nil {
-                return (nil, NSError(domain: kCFErrorDomainCFNetwork as String, code: Int(CFNetworkErrors.cfHostErrorHostNotFound.rawValue) , userInfo: nil))
+                throw PingError.hostLookupUnknown
             }
         }
+        var success: DarwinBoolean = false
+        guard let addresses = CFHostGetAddressing(cfhost, &success)?.takeUnretainedValue() as? [Data] else {
+            throw PingError.addressLookup
+        }
         
-        return (data, nil)
+        for address in addresses {
+            let addrin = address.socketAddress
+            if address.count >= MemoryLayout<sockaddr>.size && addrin.sa_family == UInt8(AF_INET) {
+                data = address
+                break
+            }
+        }
+        guard let trueData = data, !trueData.isEmpty else {
+            throw PingError.hostNotFound
+        }
         
+        return trueData
     }
     
-    init(host: String, ipv4Address: Data, configuration: PingConfiguration, queue: DispatchQueue) {
+    public init(host: String, ipv4Address: Data, configuration: PingConfiguration, queue: DispatchQueue) {
         self.host = host
         self.ipv4address = ipv4Address
         self.configuration = configuration
@@ -123,7 +126,7 @@ public class SwiftyPing: NSObject {
         CFRunLoopAddSource(CFRunLoopGetMain(), socketSource, .commonModes)
     }
     
-    convenience init(ipv4Address: String, config configuration: PingConfiguration, queue: DispatchQueue) {
+    public convenience init(ipv4Address: String, config configuration: PingConfiguration, queue: DispatchQueue) {
         var socketAddress = sockaddr_in()
         memset(&socketAddress, 0, MemoryLayout<sockaddr_in>.size)
         
@@ -135,9 +138,9 @@ public class SwiftyPing: NSObject {
         
         self.init(host: ipv4Address, ipv4Address: data as Data, configuration: configuration, queue: queue)
     }
-    convenience init?(host: String, configuration: PingConfiguration, queue: DispatchQueue) {
-        let result = SwiftyPing.getIPv4AddressFromHost(host: host)
-        if let address = result.data {
+    public convenience init?(host: String, configuration: PingConfiguration, queue: DispatchQueue) {
+        let result = try? SwiftyPing.getIPv4AddressFromHost(host: host)
+        if let address = result {
             self.init(host: host, ipv4Address: address, configuration: configuration, queue: queue)
         } else {
             return nil
@@ -188,17 +191,17 @@ public class SwiftyPing: NSObject {
     }
     
     func socket(socket: CFSocket, didReadData data: Data?) {
-        var ipHeaderData:NSData?
-        var ipData:NSData?
-        var icmpHeaderData:NSData?
-        var icmpData:NSData?
+        let ipHeaderData: NSData? = nil
+//        var ipData:NSData?
+//        var icmpHeaderData:NSData?
+//        var icmpData:NSData?
         
         let extractIPAddressBlock: () -> String? = {
             if ipHeaderData == nil {
                 return nil
             }
             guard var bytes = ipHeaderData?.bytes else { return nil }
-            let ipHeader:IPHeader = withUnsafePointer(to: &bytes) { (temp) in
+            let ipHeader: IPHeader = withUnsafePointer(to: &bytes) { (temp) in
                 return unsafeBitCast(temp, to: IPHeader.self)
             }
             
@@ -207,40 +210,38 @@ public class SwiftyPing: NSObject {
             return "\(sourceAddr[0]).\(sourceAddr[1]).\(sourceAddr[2]).\(sourceAddr[3])"
         }
         guard let data = data else { return }
-        if !ICMPExtractResponseFromData(data: data as NSData, ipHeaderData: &ipHeaderData, ipData: &ipData, icmpHeaderData: &icmpHeaderData, icmpData: &icmpData) {
-            if ipHeaderData != nil, ip == extractIPAddressBlock() {
-                return
-            }
+        let icmpResponse = try? ICMP.extractResponse(from: data as NSData)
+        if icmpResponse?.ipHeader != nil, ip == extractIPAddressBlock() {
+            return
         }
         guard let currentStartDate = currentStartDate else { return }
         let error = NSError(domain: NSURLErrorDomain, code: NSURLErrorCannotDecodeRawData, userInfo: nil)
-        let response = PingResponse(id: identifier, ipAddress: nil, sequenceNumber: Int64(currentSequenceNumber), duration: Date().timeIntervalSince(currentStartDate), error: error)
+        let response = PingResponse(identifier: identifier, ipAddress: nil, sequenceNumber: Int64(currentSequenceNumber), duration: Date().timeIntervalSince(currentStartDate), error: error)
         observer?(self, response)
         
         return scheduleNextPing()
     }
     
     func sendPing() {
-        if !self.isPinging {
-            return
-        }
-        
         self.currentSequenceNumber += 1;
         self.currentStartDate = Date()
         
-        guard let icmpPackage = ICMPPackageCreate(identifier: UInt16(identifier), sequenceNumber: UInt16(currentSequenceNumber), payloadSize: UInt32(configuration.payloadSize)), let socket = socket, let address = ipv4address else { return }
+        let icmpConfiguration = ICMP.Configuration(identifier: UInt16(identifier), sequenceNumber: UInt16(currentSequenceNumber), payloadSize: UInt32(configuration.payloadSize))
+        let icmp = ICMP(configuration: icmpConfiguration)
+        
+        guard let icmpPackage = icmp.createPackage(), let socket = socket, let address = ipv4address else { return }
         let socketError = CFSocketSendData(socket, address as CFData, icmpPackage as CFData, configuration.timeoutInterval)
         
         switch socketError {
         case .error:
             let error = NSError(domain: NSURLErrorDomain, code:NSURLErrorCannotFindHost, userInfo: [:])
-            let response = PingResponse(id: self.identifier, ipAddress: nil, sequenceNumber: Int64(currentSequenceNumber), duration: Date().timeIntervalSince(currentStartDate!), error: error)
+            let response = PingResponse(identifier: self.identifier, ipAddress: nil, sequenceNumber: Int64(currentSequenceNumber), duration: Date().timeIntervalSince(currentStartDate!), error: error)
             observer?(self, response)
             
             return self.scheduleNextPing()
         case .timeout:
             let error = NSError(domain: NSURLErrorDomain, code:NSURLErrorTimedOut, userInfo: [:])
-            let response = PingResponse(id: self.identifier, ipAddress: nil, sequenceNumber: Int64(currentSequenceNumber), duration: Date().timeIntervalSince(currentStartDate!), error: error)
+            let response = PingResponse(identifier: self.identifier, ipAddress: nil, sequenceNumber: Int64(currentSequenceNumber), duration: Date().timeIntervalSince(currentStartDate!), error: error)
             observer?(self, response)
             
             return self.scheduleNextPing()
@@ -255,7 +256,7 @@ public class SwiftyPing: NSObject {
             
             self.timeoutBlock = nil
             let error = NSError(domain: NSURLErrorDomain, code:NSURLErrorTimedOut, userInfo: [:])
-            let response = PingResponse(id: self.identifier, ipAddress: nil, sequenceNumber: Int64(self.currentSequenceNumber), duration: Date().timeIntervalSince(self.currentStartDate!), error: error)
+            let response = PingResponse(identifier: self.identifier, ipAddress: nil, sequenceNumber: Int64(self.currentSequenceNumber), duration: Date().timeIntervalSince(self.currentStartDate!), error: error)
             self.observer?(self, response)
             self.scheduleNextPing()
         }
@@ -264,21 +265,12 @@ public class SwiftyPing: NSObject {
 
 // Helper classes
 
-public class PingResponse: NSObject {
-    
-    public var identifier: UInt32
-    public var ipAddress: String?
-    public var sequenceNumber: Int64
-    public var duration: TimeInterval
-    public var error: NSError?
-    
-    public init(id: UInt32, ipAddress addr: String?, sequenceNumber number: Int64, duration dur: TimeInterval, error err: NSError?) {
-        identifier = id
-        ipAddress = addr
-        sequenceNumber = number
-        duration = dur
-        error = err
-    }
+public struct PingResponse {
+    public let identifier: UInt32
+    public let ipAddress: String?
+    public let sequenceNumber: Int64
+    public let duration: TimeInterval
+    public let error: NSError?
 }
 public struct PingConfiguration {
     let pingInterval: TimeInterval
@@ -298,9 +290,140 @@ public struct PingConfiguration {
     }
 }
 
-// MARK: ICMP
+func check(sum: UnsafeMutableRawPointer, length: Int) -> UInt16 {
+    var bufferLength = length
+    var checksum: UInt32 = 0
+    var buffer = sum.assumingMemoryBound(to: UInt16.self)
+    
+    let size = MemoryLayout<UInt16>.size
+    while bufferLength > 1 {
+        checksum += UInt32(buffer.pointee)
+        buffer = buffer.successor()
+        bufferLength -= size
+    }
+    if bufferLength == 1 {
+        checksum += UInt32(UnsafeMutablePointer<UInt16>(buffer).pointee)
+    }
+    checksum = (checksum >> 16) + (checksum & 0xFFFF)
+    checksum += checksum >> 16
+    return ~UInt16(checksum)
+}
 
-struct IPHeader {
+public struct ICMP {
+    public struct Configuration {
+        public let identifier: UInt16
+        public let sequenceNumber: UInt16
+        public let payloadSize: UInt32
+    }
+    public let configuration: Configuration
+    
+    public func createPackage() -> NSData? {
+        let packageDebug = false  // triggers print statements below
+        
+        var icmpType = ICMPType.EchoRequest.rawValue
+        var icmpCode: UInt8 = 0
+        var icmpChecksum: UInt16 = 0
+        var icmpIdentifier = configuration.identifier
+        var icmpSequence = configuration.sequenceNumber
+        
+        let payloadSize = configuration.payloadSize
+        
+        let packet = [String](repeatElement("0", count: Int(payloadSize))).joined()
+        guard let packetData = packet.data(using: .utf8) else { return nil }
+        var payload = NSData(data: packetData)
+        payload = payload.subdata(with: NSRange(location: 0, length: Int(payloadSize))) as NSData
+        guard let package = NSMutableData(capacity: MemoryLayout<ICMP.Header>.size + payload.length) else { return nil }
+        package.replaceBytes(in: NSRange(location: 0, length: 1), withBytes: &icmpType)
+        package.replaceBytes(in: NSRange(location: 1, length: 1), withBytes: &icmpCode)
+        package.replaceBytes(in: NSRange(location: 2, length: 2), withBytes: &icmpChecksum)
+        package.replaceBytes(in: NSRange(location: 4, length: 2), withBytes: &icmpIdentifier)
+        package.replaceBytes(in: NSRange(location: 6, length: 2), withBytes: &icmpSequence)
+        package.replaceBytes(in: NSRange(location: 8, length: payload.length), withBytes: payload.bytes)
+        
+        let bytes = package.mutableBytes
+        icmpChecksum = check(sum: bytes, length: package.length)
+        package.replaceBytes(in: NSRange(location: 2, length: 2), withBytes: &icmpChecksum)
+        if packageDebug { print("ping package: \(package)") }
+        return package
+    }
+    public struct Response {
+        public let ipHeader: NSData?
+        public let ipData: NSData?
+        public let headerData: NSData?
+        public let data: NSData?
+    }
+    public enum ResponseError: Error {
+        case invalidBuffer
+        case invalidBufferLength
+        case checksumMismatch
+    }
+    public static func extractResponse(from data: NSData) throws -> Response {
+        guard let buffer = data.mutableCopy() as? NSMutableData, buffer.length >= MemoryLayout<IPHeader>.size + MemoryLayout<ICMP.Header>.size else { throw ResponseError.invalidBuffer }
+        
+        var mutableBytes = buffer.mutableBytes
+        
+        let ipHeader = withUnsafePointer(to: &mutableBytes) { (temp) in
+            return unsafeBitCast(temp, to: IPHeader.self)
+        }
+        
+        // IPv4 and ICMP
+        guard ipHeader.versionAndHeaderLength & 0xF0 == 0x40, ipHeader.protocol == 1 else { throw ResponseError.invalidBuffer }
+        
+        let ipHeaderLength = (ipHeader.versionAndHeaderLength & 0x0F) * UInt8(MemoryLayout<UInt32>.size)
+        if buffer.length < Int(ipHeaderLength) + MemoryLayout<ICMP.Header>.size {
+            throw ResponseError.invalidBufferLength
+        }
+
+        let range = NSMakeRange(0, MemoryLayout<IPHeader>.size)
+        let ipHeaderData = buffer.subdata(with: range) as NSData?
+        
+        var ipData: NSData?
+        if buffer.length >= MemoryLayout<IPHeader>.size + Int(ipHeaderLength) {
+            ipData = buffer.subdata(with: NSMakeRange(MemoryLayout<IPHeader>.size, Int(ipHeaderLength))) as NSData?
+        }
+        
+        let icmpHeaderOffset = size_t(ipHeaderLength)
+        
+        var headerBuffer = mutableBytes.assumingMemoryBound(to: UInt8.self) + icmpHeaderOffset
+        
+        var icmpHeader = withUnsafePointer(to: &headerBuffer) { (temp) in
+            return unsafeBitCast(temp, to: ICMP.Header.self)
+        }
+        
+        let receivedChecksum = icmpHeader.checkSum
+        let calculatedChecksum = check(sum: &icmpHeader, length: buffer.length - icmpHeaderOffset)
+        icmpHeader.checkSum = receivedChecksum
+        
+        guard receivedChecksum == calculatedChecksum else {
+            print("invalid ICMP header. Checksums did not match")
+            throw ResponseError.checksumMismatch
+        }
+        
+        let icmpDataRange = NSMakeRange(icmpHeaderOffset + MemoryLayout<ICMP.Header>.size, buffer.length - (icmpHeaderOffset + MemoryLayout<ICMP.Header>.size))
+        let icmpHeaderData = buffer.subdata(with: NSMakeRange(icmpHeaderOffset, MemoryLayout<ICMP.Header>.size)) as NSData?
+        let icmpData = buffer.subdata(with:icmpDataRange) as NSData?
+        
+        return Response(ipHeader: ipHeaderData, ipData: ipData, headerData: icmpHeaderData, data: icmpData)
+    }
+    
+    public struct Header {
+        var type: UInt8      /* type of message*/
+        var code: UInt8      /* type sub code */
+        var checkSum: UInt16 /* ones complement cksum of struct */
+        var identifier: UInt16
+        var sequenceNumber: UInt16
+        var data:timeval
+    }
+    
+    // ICMP type and code combinations:
+    
+    public enum ICMPType: UInt8{
+        case EchoReply = 0           // code is always 0
+        case EchoRequest = 8            // code is always 0
+    }
+}
+
+public struct IPHeader {
     var versionAndHeaderLength: UInt8
     var differentiatedServices: UInt8
     var totalLength: UInt16
@@ -313,127 +436,6 @@ struct IPHeader {
     var destinationAddress: [UInt8]
 }
 
-
-struct ICMPHeader {
-    var type: UInt8      /* type of message*/
-    var code: UInt8      /* type sub code */
-    var checkSum: UInt16 /* ones complement cksum of struct */
-    var identifier: UInt16
-    var sequenceNumber: UInt16
-    var data:timeval
-}
-
-// ICMP type and code combinations:
-
-enum ICMPType: UInt8{
-    case EchoReply = 0           // code is always 0
-    case EchoRequest = 8            // code is always 0
-}
-
-
-// static inline uint16_t in_cksum(const void *buffer, size_t bufferLen)
-
-@inline(__always) func checkSum(buffer: UnsafeMutableRawPointer, bufLen: Int) -> UInt16 {
-    var bufLen = bufLen
-    var checksum:UInt32 = 0
-    var buf = buffer.assumingMemoryBound(to: UInt16.self)
-    
-    while bufLen > 1 {
-        checksum += UInt32(buf.pointee)
-        buf = buf.successor()
-        bufLen -= MemoryLayout<UInt16>.size
-    }
-    
-    if bufLen == 1 {
-        checksum += UInt32(UnsafeMutablePointer<UInt16>(buf).pointee)
-    }
-    checksum = (checksum >> 16) + (checksum & 0xFFFF)
-    checksum += checksum >> 16
-    return ~UInt16(checksum)
-}
-
-// package creation
-
-func ICMPPackageCreate(identifier:UInt16, sequenceNumber: UInt16, payloadSize: UInt32)-> NSData? {
-    let packageDebug = false  // triggers print statements below
-    
-    var icmpType = ICMPType.EchoRequest.rawValue
-    var icmpCode: UInt8 = 0
-    var icmpChecksum: UInt16 = 0
-    var icmpIdentifier = identifier
-    var icmpSequence = sequenceNumber
-    
-    let packet = "baadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaadbaad"
-    guard let packetData = packet.data(using: .utf8) else { return nil }
-    var payload = NSData(data: packetData)
-    payload = payload.subdata(with: NSRange(location: 0, length: Int(payloadSize))) as NSData
-    guard let package = NSMutableData(capacity: MemoryLayout<ICMPHeader>.size + payload.length) else { return nil }
-    package.replaceBytes(in: NSRange(location: 0, length: 1), withBytes: &icmpType)
-    package.replaceBytes(in: NSRange(location: 1, length: 1), withBytes: &icmpCode)
-    package.replaceBytes(in: NSRange(location: 2, length: 2), withBytes: &icmpChecksum)
-    package.replaceBytes(in: NSRange(location: 4, length: 2), withBytes: &icmpIdentifier)
-    package.replaceBytes(in: NSRange(location: 6, length: 2), withBytes: &icmpSequence)
-    package.replaceBytes(in: NSRange(location: 8, length: payload.length), withBytes: payload.bytes)
-    
-    let bytes = package.mutableBytes
-    icmpChecksum = checkSum(buffer: bytes, bufLen: package.length)
-    package.replaceBytes(in: NSRange(location: 2, length: 2), withBytes: &icmpChecksum)
-    if packageDebug { print("ping package: \(package)") }
-    return package
-}
-
-@inline(__always) func ICMPExtractResponseFromData(data: NSData, ipHeaderData: AutoreleasingUnsafeMutablePointer<NSData?>, ipData: AutoreleasingUnsafeMutablePointer<NSData?>, icmpHeaderData: AutoreleasingUnsafeMutablePointer<NSData?>, icmpData: AutoreleasingUnsafeMutablePointer<NSData?>) -> Bool {
-    
-    guard let buffer = data.mutableCopy() as? NSMutableData else { return false }
-    
-    if buffer.length < (MemoryLayout<IPHeader>.size+MemoryLayout<ICMPHeader>.size) {
-        return false
-    }
-    
-    var mutableBytes = buffer.mutableBytes
-    
-    let ipHeader = withUnsafePointer(to: &mutableBytes) { (temp) in
-        return unsafeBitCast(temp, to: IPHeader.self)
-    }
-    
-    // IPv4 and ICMP
-    guard ipHeader.versionAndHeaderLength & 0xF0 == 0x40, ipHeader.protocol == 1 else { return false }
-    
-    let ipHeaderLength = (ipHeader.versionAndHeaderLength & 0x0F) * UInt8(MemoryLayout<UInt32>.size)
-    let range = NSMakeRange(0, MemoryLayout<IPHeader>.size)
-    ipHeaderData.pointee = buffer.subdata(with: range) as NSData?
-    
-    if buffer.length >= MemoryLayout<IPHeader>.size + Int(ipHeaderLength) {
-        ipData.pointee = buffer.subdata(with: NSMakeRange(MemoryLayout<IPHeader>.size, Int(ipHeaderLength))) as NSData?
-    }
-    
-    if buffer.length < Int(ipHeaderLength) + MemoryLayout<ICMPHeader>.size {
-        return false
-    }
-    
-    let icmpHeaderOffset = size_t(ipHeaderLength)
-    
-    var headerBuffer = mutableBytes.assumingMemoryBound(to: UInt8.self) + icmpHeaderOffset
-    
-    var icmpHeader = withUnsafePointer(to: &headerBuffer) { (temp) in
-        return unsafeBitCast(temp, to: ICMPHeader.self)
-    }
-    
-    let receivedChecksum = icmpHeader.checkSum
-    let calculatedChecksum = checkSum(buffer: &icmpHeader, bufLen: buffer.length - icmpHeaderOffset)
-    icmpHeader.checkSum = receivedChecksum
-    
-    if receivedChecksum != calculatedChecksum {
-        print("invalid ICMP header. Checksums did not match")
-        return false
-    }
-    
-    let icmpDataRange = NSMakeRange(icmpHeaderOffset + MemoryLayout<ICMPHeader>.size, buffer.length - (icmpHeaderOffset + MemoryLayout<ICMPHeader>.size))
-    icmpHeaderData.pointee = buffer.subdata(with: NSMakeRange(icmpHeaderOffset, MemoryLayout<ICMPHeader>.size)) as NSData?
-    icmpData.pointee = buffer.subdata(with:icmpDataRange) as NSData?
-    
-    return true
-}
 
 extension Data {
     public var socketAddress: sockaddr {
