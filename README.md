@@ -1,5 +1,5 @@
 # SwiftyPing
-ICMP ping client for Swift 4
+ICMP ping client for Swift 5.0
 
 ### SwiftyPing is an easy-to-use, one file ICMP ping client
 This project is based on SwiftPing: https://github.com/ankitthakur/SwiftPing. This is basically the same code base, but with some obvious bug fixes, safety improvements and overall more Swift-y. Unfortunately, it's still largely based on unsafe memory manipulation.

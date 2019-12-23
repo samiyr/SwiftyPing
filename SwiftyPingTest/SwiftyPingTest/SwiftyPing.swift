@@ -437,14 +437,16 @@ func ICMPPackageCreate(identifier:UInt16, sequenceNumber: UInt16, payloadSize: U
 
 extension Data {
     public var socketAddress: sockaddr {
-        return self.withUnsafeBytes { (pointer: UnsafePointer<UInt8>) -> sockaddr in
+        self.withUnsafeBytes { dataBytes in
+            let pointer: UnsafePointer<UInt8> = dataBytes.baseAddress!.assumingMemoryBound(to: UInt8.self)
             let raw = UnsafeRawPointer(pointer)
             let address = raw.assumingMemoryBound(to: sockaddr.self).pointee
             return address
         }
     }
     public var socketAddressInternet: sockaddr_in {
-        return self.withUnsafeBytes { (pointer: UnsafePointer<UInt8>) -> sockaddr_in in
+        self.withUnsafeBytes { dataBytes in
+            let pointer: UnsafePointer<UInt8> = dataBytes.baseAddress!.assumingMemoryBound(to: UInt8.self)
             let raw = UnsafeRawPointer(pointer)
             let address = raw.assumingMemoryBound(to: sockaddr_in.self).pointee
             return address
