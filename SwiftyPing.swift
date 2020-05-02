@@ -153,39 +153,39 @@ public class SwiftyPing: NSObject {
             let address = self.destination.ipv4Address
             guard let icmpPackage = self.createICMPPackage(identifier: UInt16(self.identifier), sequenceNumber: UInt16(self.sequenceIndex), payloadSize: Int(self.configuration.payloadSize)), let socket = self.socket else { return }
             let socketError = CFSocketSendData(socket, address as CFData, icmpPackage as CFData, self.configuration.timeoutInterval)
-                    
-                    switch socketError {
-                    case .error:
-                        let error = NSError(domain: NSURLErrorDomain, code:NSURLErrorCannotFindHost, userInfo: [:])
-                        let response = PingResponse(identifier: self.identifier, ipAddress: self.destination.ip ?? "", sequenceNumber: self.sequenceIndex, duration: Date().timeIntervalSince(self.sequenceStart ?? Date()), error: error)
-                        self.isPinging = false
-                        self.observer?(self, response)
-                        
-                        return self.scheduleNextPing()
-                    case .timeout:
-                        let error = NSError(domain: NSURLErrorDomain, code:NSURLErrorTimedOut, userInfo: [:])
-                        let response = PingResponse(identifier: self.identifier, ipAddress: self.destination.ip ?? "", sequenceNumber: self.sequenceIndex, duration: Date().timeIntervalSince(self.sequenceStart ?? Date()), error: error)
-                        self.isPinging = false
-                        self.observer?(self, response)
-                        
-                        return self.scheduleNextPing()
-
-                    default: break
-                    }
-                    
+            
+            switch socketError {
+            case .error:
+                let error = NSError(domain: NSURLErrorDomain, code:NSURLErrorCannotFindHost, userInfo: [:])
+                let response = PingResponse(identifier: self.identifier, ipAddress: self.destination.ip ?? "", sequenceNumber: self.sequenceIndex, duration: Date().timeIntervalSince(self.sequenceStart ?? Date()), error: error)
+                self.isPinging = false
+                self.observer?(self, response)
+                
+                return self.scheduleNextPing()
+            case .timeout:
+                let error = NSError(domain: NSURLErrorDomain, code:NSURLErrorTimedOut, userInfo: [:])
+                let response = PingResponse(identifier: self.identifier, ipAddress: self.destination.ip ?? "", sequenceNumber: self.sequenceIndex, duration: Date().timeIntervalSince(self.sequenceStart ?? Date()), error: error)
+                self.isPinging = false
+                self.observer?(self, response)
+                
+                return self.scheduleNextPing()
+                
+            default: break
+            }
+            
             let sequenceNumber = self.sequenceIndex
             self.timeoutBlock = { () -> Void in
-                        if sequenceNumber != self.sequenceIndex {
-                            return
-                        }
-                        
-                        self.timeoutBlock = nil
-                        let error = NSError(domain: NSURLErrorDomain, code:NSURLErrorTimedOut, userInfo: [:])
-                        let response = PingResponse(identifier: self.identifier, ipAddress: self.destination.ip ?? "", sequenceNumber: self.sequenceIndex, duration: Date().timeIntervalSince(self.sequenceStart ?? Date()), error: error)
-                        self.isPinging = false
-                        self.observer?(self, response)
-                        self.scheduleNextPing()
-                    }
+                if sequenceNumber != self.sequenceIndex {
+                    return
+                }
+                
+                self.timeoutBlock = nil
+                let error = NSError(domain: NSURLErrorDomain, code:NSURLErrorTimedOut, userInfo: [:])
+                let response = PingResponse(identifier: self.identifier, ipAddress: self.destination.ip ?? "", sequenceNumber: self.sequenceIndex, duration: Date().timeIntervalSince(self.sequenceStart ?? Date()), error: error)
+                self.isPinging = false
+                self.observer?(self, response)
+                self.scheduleNextPing()
+            }
         }
     }
 
@@ -203,7 +203,9 @@ public class SwiftyPing: NSObject {
     }
     func scheduleNextPing() {
         if shouldSchedulePing() {
-            sendPing()
+            currentQueue.asyncAfter(deadline: .now() + configuration.pingInterval) {
+                self.sendPing()
+            }
         }
     }
     

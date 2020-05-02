@@ -26,13 +26,17 @@ class ViewController: UIViewController {
     var ping: SwiftyPing?
     func startPinging() {
         do {
-            ping = try SwiftyPing(host: "google.com", configuration: PingConfiguration(interval: 0.5), queue: DispatchQueue.global())
+            ping = try SwiftyPing(host: "1.1.1.1", configuration: PingConfiguration(interval: 1.0), queue: DispatchQueue.global())
         } catch {
             textView.text = error.localizedDescription
         }
         ping?.observer = { (ping, response) in
             DispatchQueue.main.async {
-                self.textView.text.append(contentsOf: "\nPing #\(response.sequenceNumber): \(response.duration * 1000) ms")
+                var message = "\(response.duration * 1000) ms"
+                if let error = response.error {
+                    message = error.localizedDescription
+                }
+                self.textView.text.append(contentsOf: "\nPing #\(response.sequenceNumber): \(message)")
                 self.textView.scrollRangeToVisible(NSRange(location: self.textView.text.count - 1, length: 1))
             }
         }
