@@ -1,28 +1,28 @@
 # SwiftyPing
-ICMP ping client for Swift 4
+ICMP ping client for Swift 5
 
 ### SwiftyPing is an easy-to-use, one file ICMP ping client
-This project is based on SwiftPing: https://github.com/ankitthakur/SwiftPing. This is basically the same code base, but with some obvious bug fixes, safety improvements and overall more Swift-y. Unfortunately, it's still largely based on unsafe memory manipulation.
+This project is based on SwiftPing: https://github.com/ankitthakur/SwiftPing.
 
 ### Usage
 ```swift
 
 // Ping indefinitely
 let pinger = SwiftyPing(host: "1.1.1.1", configuration: PingConfiguration(interval: 0.5, with: 5), queue: DispatchQueue.global())
-pinger?.observer = { (_, response) in
+pinger?.observer = { (response) in
     let duration = response.duration
     print(duration)
 }
-pinger?.start()
+pinger?.startPinging()
 
 // Ping once
 let once = SwiftyPing(host: "1.1.1.1", configuration: PingConfiguration(interval: 0.5, with: 5), queue: DispatchQueue.global())
-once?.observer = { (_, response) in
+once?.observer = { (response) in
     let duration = response.duration
     print(duration)
-    once?.stop()
 }
-once?.start()
+once?.targetCount = 1
+once?.startPinging()
 
 ```
 ### Installation
@@ -30,6 +30,9 @@ Just drop the SwiftyPing.swift file to your project.  Using SwiftyPing for a Mac
 
 ### Future development and contributions
 I made this project based on what I need, so I probably won't be adding any features unless I really need them. I will maintain it (meaning bug fixes and support for new Swift versions) for some time at least. However, you can submit a pull request and I'll take a look. Please try to keep the overall coding style.
+
+### Caveats
+This is low-level code, basically C code translated to Swift. This means that there are unsafe casts from raw bytes to Swift structs, for which Swift's usual type safety checks no longer apply. These can fail ungracefully (throwing an exception), and may even be used as an exploit (I'm not a security researcher and thus don't have the expertise to say for sure), so use with caution, especially if pinging untrusted hosts.
 
 ### License
 Use pretty much however you want. Officially licensed under MIT.
