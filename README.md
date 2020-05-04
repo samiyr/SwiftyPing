@@ -34,5 +34,7 @@ I made this project based on what I need, so I probably won't be adding any feat
 ### Caveats
 This is low-level code, basically C code translated to Swift. This means that there are unsafe casts from raw bytes to Swift structs, for which Swift's usual type safety checks no longer apply. These can fail ungracefully (throwing an exception), and may even be used as an exploit (I'm not a security researcher and thus don't have the expertise to say for sure), so use with caution, especially if pinging untrusted hosts.
 
+Also, while I think that the API is now stable, I don't make any guarantees – some new version might break old stuff.
+
 ### License
 Use pretty much however you want. Officially licensed under MIT.
