@@ -8,7 +8,7 @@ This project is based on SwiftPing: https://github.com/ankitthakur/SwiftPing.
 ```swift
 
 // Ping indefinitely
-let pinger = SwiftyPing(host: "1.1.1.1", configuration: PingConfiguration(interval: 0.5, with: 5), queue: DispatchQueue.global())
+let pinger = try? SwiftyPing(host: "1.1.1.1", configuration: PingConfiguration(interval: 0.5, with: 5), queue: DispatchQueue.global())
 pinger?.observer = { (response) in
     let duration = response.duration
     print(duration)
@@ -16,7 +16,7 @@ pinger?.observer = { (response) in
 pinger?.startPinging()
 
 // Ping once
-let once = SwiftyPing(host: "1.1.1.1", configuration: PingConfiguration(interval: 0.5, with: 5), queue: DispatchQueue.global())
+let once = try? SwiftyPing(host: "1.1.1.1", configuration: PingConfiguration(interval: 0.5, with: 5), queue: DispatchQueue.global())
 once?.observer = { (response) in
     let duration = response.duration
     print(duration)
