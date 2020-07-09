@@ -50,6 +50,14 @@ public enum PingError: Error, Equatable {
     /// that would be `responseTimeout`. This timeout means that
     /// the ping request wasn't even sent within the timeout interval.
     case requestTimeout
+    
+    // Internal errors
+    /// Checksum is out-of-bounds for `UInt16` in `computeCheckSum`. The underlying cause should eventually be fixed, but this patch ensures that it will fail gracefully instead of crashing.
+    case checksumOutOfBounds
+    /// Unspecified package creation error
+    case packageCreationFailed
+    /// For some reason, the socket is `nil`. This shouldn't ever happen, but just in case...
+    case socketNil
 }
 
 // MARK: SwiftyPing
@@ -231,18 +239,42 @@ public class SwiftyPing: NSObject {
 
         currentQueue.async {
             let address = self.destination.ipv4Address
-            guard let icmpPackage = self.createICMPPackage(identifier: UInt16(self.identifier), sequenceNumber: UInt16(self.sequenceIndex), payloadSize: Int(self.configuration.payloadSize)), let socket = self.socket else { return }
-            let socketError = CFSocketSendData(socket, address as CFData, icmpPackage as CFData, self.configuration.timeoutInterval)
-
-            if socketError != .success {
-                var error: PingError?
+            do {
+                let pkg = try self.createICMPPackage(identifier: UInt16(self.identifier), sequenceNumber: UInt16(self.sequenceIndex), payloadSize: Int(self.configuration.payloadSize))
                 
-                switch socketError {
-                case .error: error = .requestError
-                case .timeout: error = .requestTimeout
-                default: break
+                guard let icmpPackage = pkg else {
+                    // package is nil
+                    let response = PingResponse(identifier: self.identifier, ipAddress: self.destination.ip ?? "", sequenceNumber: self.sequenceIndex, duration: Date().timeIntervalSince(self.sequenceStart ?? Date()), error: .packageCreationFailed)
+                    self.isPinging = false
+                    self.informObserver(of: response)
+                    
+                    return self.scheduleNextPing()
                 }
-                let response = PingResponse(identifier: self.identifier, ipAddress: self.destination.ip ?? "", sequenceNumber: self.sequenceIndex, duration: Date().timeIntervalSince(self.sequenceStart ?? Date()), error: error)
+                guard let socket = self.socket else { return }
+                let socketError = CFSocketSendData(socket, address as CFData, icmpPackage as CFData, self.configuration.timeoutInterval)
+
+                if socketError != .success {
+                    var error: PingError?
+                    
+                    switch socketError {
+                    case .error: error = .requestError
+                    case .timeout: error = .requestTimeout
+                    default: break
+                    }
+                    let response = PingResponse(identifier: self.identifier, ipAddress: self.destination.ip ?? "", sequenceNumber: self.sequenceIndex, duration: Date().timeIntervalSince(self.sequenceStart ?? Date()), error: error)
+                    self.isPinging = false
+                    self.informObserver(of: response)
+                    
+                    return self.scheduleNextPing()
+                }
+            } catch {
+                let pingError: PingError
+                if let err = error as? PingError {
+                    pingError = err
+                } else {
+                    pingError = .packageCreationFailed
+                }
+                let response = PingResponse(identifier: self.identifier, ipAddress: self.destination.ip ?? "", sequenceNumber: self.sequenceIndex, duration: Date().timeIntervalSince(self.sequenceStart ?? Date()), error: pingError)
                 self.isPinging = false
                 self.informObserver(of: response)
                 
@@ -342,7 +374,7 @@ public class SwiftyPing: NSObject {
     // MARK: - ICMP package
     
     /// Creates an ICMP package. Currently, the `payloadSize` is not respected, but the payload is always 56 bytes.
-    private func createICMPPackage(identifier: UInt16, sequenceNumber: UInt16, payloadSize: Int)-> NSData? {
+    private func createICMPPackage(identifier: UInt16, sequenceNumber: UInt16, payloadSize: Int) throws -> NSData? {
         var icmpType = ICMPType.EchoRequest.rawValue
         var icmpCode: UInt8 = 0
         var icmpChecksum: UInt16 = 0
@@ -361,13 +393,13 @@ public class SwiftyPing: NSObject {
         package.replaceBytes(in: NSRange(location: 6, length: 2), withBytes: &icmpSequence)
         package.replaceBytes(in: NSRange(location: 8, length: payload.count), withBytes: NSData(data: payload).bytes)
 
-        var checksum = computeCheckSum(buffer: package.mutableBytes, bufLen: package.length)
+        var checksum = try computeCheckSum(buffer: package.mutableBytes, bufLen: package.length)
         package.replaceBytes(in: NSRange(location: 2, length: 2), withBytes: &checksum)
         
         return package
     }
     
-    private func computeCheckSum(buffer: UnsafeMutableRawPointer, bufLen: Int) -> UInt16 {
+    private func computeCheckSum(buffer: UnsafeMutableRawPointer, bufLen: Int) throws -> UInt16 {
         var bytesLeft = bufLen
         var checksum: Int32 = 0
         var buf = buffer.assumingMemoryBound(to: UInt16.self)
@@ -383,6 +415,12 @@ public class SwiftyPing: NSObject {
         }
         checksum = (checksum >> 16) + (checksum & 0xFFFF)
         checksum += checksum >> 16
+        
+        let intermediate = Int32(UInt16.max) + ~checksum
+        guard intermediate >= 0, intermediate < UInt16.max else {
+            throw PingError.checksumOutOfBounds
+        }
+        
         let answer = UInt16(Int32(UInt16.max) + ~checksum) + 1
         return answer
     }
