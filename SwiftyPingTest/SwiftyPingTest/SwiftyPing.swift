@@ -115,16 +115,16 @@ public class SwiftyPing: NSObject {
     }
     // MARK: - Initialization
     /// Ping host
-    let destination: Destination
+    public let destination: Destination
     /// Ping configuration
-    let configuration: PingConfiguration
+    public let configuration: PingConfiguration
     /// This closure gets called with ping responses.
     public var observer: Observer?
     /// A random identifier which is a part of the ping request.
     private let identifier = UInt16.random(in: 0..<UInt16.max)
     
     /// User-specified dispatch queue. The `observer` is always called from this queue.
-    let currentQueue: DispatchQueue
+    private let currentQueue: DispatchQueue
     
     /// Socket for sending and receiving data.
     private var socket: CFSocket?
@@ -148,7 +148,7 @@ public class SwiftyPing: NSObject {
     public var targetCount: Int?
     
     /// Initializes a pinger.
-    init(destination: Destination, configuration: PingConfiguration, queue: DispatchQueue) {
+    public init(destination: Destination, configuration: PingConfiguration, queue: DispatchQueue) {
         self.destination = destination
         self.configuration = configuration
         self.currentQueue = queue
@@ -176,7 +176,7 @@ public class SwiftyPing: NSObject {
     }
 
     // MARK: - Convenience Initializers
-    convenience init(ipv4Address: String, config configuration: PingConfiguration, queue: DispatchQueue) {
+    public convenience init(ipv4Address: String, config configuration: PingConfiguration, queue: DispatchQueue) {
         var socketAddress = sockaddr_in()
         memset(&socketAddress, 0, MemoryLayout<sockaddr_in>.size)
         
@@ -189,7 +189,7 @@ public class SwiftyPing: NSObject {
         let destination = Destination(host: ipv4Address, ipv4Address: data as Data)
         self.init(destination: destination, configuration: configuration, queue: queue)
     }
-    convenience init(host: String, configuration: PingConfiguration, queue: DispatchQueue) throws {
+    public convenience init(host: String, configuration: PingConfiguration, queue: DispatchQueue) throws {
         let result = try Destination.getIPv4AddressFromHost(host: host)
         let destination = Destination(host: host, ipv4Address: result)
         self.init(destination: destination, configuration: configuration, queue: queue)
@@ -558,15 +558,15 @@ public struct PingConfiguration {
 
 // MARK: - Data Extensions
 
-extension Data {
-    public var socketAddress: sockaddr? {
+public extension Data {
+    var socketAddress: sockaddr? {
         return self.withUnsafeBytes { (pointer: UnsafeRawBufferPointer) -> sockaddr? in
             let raw = pointer.baseAddress
             let address = raw?.assumingMemoryBound(to: sockaddr.self).pointee
             return address
         }
     }
-    public var socketAddressInternet: sockaddr_in? {
+    var socketAddressInternet: sockaddr_in? {
         return self.withUnsafeBytes { (pointer: UnsafeRawBufferPointer) -> sockaddr_in? in
             let raw = pointer.baseAddress
             let address = raw?.assumingMemoryBound(to: sockaddr_in.self).pointee
