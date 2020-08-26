@@ -47,6 +47,5 @@ class ViewController: UIViewController {
 //        ping?.targetCount = 1
         ping?.startPinging()
     }
-
 }
 

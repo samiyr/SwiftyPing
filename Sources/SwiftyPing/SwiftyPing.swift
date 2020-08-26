@@ -62,6 +62,16 @@ public enum PingError: Error, Equatable {
 
 // MARK: SwiftyPing
 
+public class SocketInfo {
+    public let pinger: SwiftyPing
+    public let identifier: UInt16
+    
+    public init(pinger: SwiftyPing, identifier: UInt16) {
+        self.pinger = pinger
+        self.identifier = identifier
+    }
+}
+
 public class SwiftyPing: NSObject {
     /// Describes the ping host destination.
     public struct Destination {
@@ -122,6 +132,12 @@ public class SwiftyPing: NSObject {
     public var observer: Observer?
     /// A random identifier which is a part of the ping request.
     private let identifier = UInt16.random(in: 0..<UInt16.max)
+    /// A random UUID fingerprint sent as the payload.
+    private let fingerprint = UUID()
+    
+    private var fingerprintData: Data? {
+        return fingerprint.uuidString.data(using: .ascii)
+    }
     
     /// User-specified dispatch queue. The `observer` is always called from this queue.
     private let currentQueue: DispatchQueue
@@ -156,13 +172,19 @@ public class SwiftyPing: NSObject {
         super.init()
 
         // Create a socket context...
-        var context = CFSocketContext(version: 0, info: Unmanaged.passRetained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
+        let info = SocketInfo(pinger: self, identifier: identifier)
+        var context = CFSocketContext(version: 0, info: Unmanaged.passRetained(info).toOpaque(), retain: nil, release: nil, copyDescription: nil)
 
         // ...and a socket...
         self.socket = CFSocketCreate(kCFAllocatorDefault, AF_INET, SOCK_DGRAM, IPPROTO_ICMP, CFSocketCallBackType.dataCallBack.rawValue, { socket, type, address, data, info in
             // Socket callback closure
             guard let socket = socket, let info = info else { return }
-            let ping: SwiftyPing = Unmanaged.fromOpaque(info).takeUnretainedValue()
+            let socketInfo: SocketInfo = Unmanaged.fromOpaque(info).takeUnretainedValue()
+            guard socketInfo.pinger.identifier == socketInfo.identifier else {
+                print("mismatch")
+                return
+            }
+            let ping = socketInfo.pinger
             if (type as CFSocketCallBackType) == CFSocketCallBackType.dataCallBack {
                 let cfdata = Unmanaged<NSData>.fromOpaque(data!).takeUnretainedValue() as Data
                 ping.socket(socket: socket, didReadData: cfdata)
@@ -381,9 +403,9 @@ public class SwiftyPing: NSObject {
         var icmpIdentifier = CFSwapInt16HostToBig(identifier)
         var icmpSequence = CFSwapInt16HostToBig(sequenceNumber)
         
-        let count = 99 - sequenceNumber % 100
-        let payloadString = String(format: "%28zd bottles of beer on the wall", count)
-        guard let payload = payloadString.data(using: .ascii) else { return nil }
+//        let count = 99 - sequenceNumber % 100
+//        let payloadString = fingerprint.uuidString
+        guard let payload = fingerprintData else { return nil }
         guard let package = NSMutableData(length: MemoryLayout<ICMPHeader>.size + payload.count) else { return nil }
         
         package.replaceBytes(in: NSRange(location: 0, length: 1), withBytes: &icmpType)
@@ -449,6 +471,15 @@ public class SwiftyPing: NSObject {
         let icmpHeaderDataRaw = buffer.subdata(with: NSRange(location: headerOffset, length: MemoryLayout<ICMPHeader>.size))
         let icmpHeader = icmpHeaderDataRaw.withUnsafeBytes({ $0.load(as: ICMPHeader.self) })
         
+        guard let fingerprintData = self.fingerprintData else { return false }
+        // I don't like this hardcoded 28
+        if data.length >= 28 + fingerprintData.count {
+            // Check the payload, which should contain the fingerprint, to make sure that we're handling the correct responses
+            let payload = data.subdata(with: NSRange(location: 28, length: fingerprintData.count))
+            let payloadString = String(data: payload, encoding: .ascii)
+            guard payloadString == fingerprint.uuidString else { return false }
+        }
+        
         // TODO: checksum
 //        let receivedChecksum = icmpHeader.checkSum
 //        var alternateHeader = icmpHeader
@@ -460,7 +491,6 @@ public class SwiftyPing: NSObject {
 //            print("checksum mismatch: \(receivedChecksum), \(calculatedChecksum)")
 //            return false
 //        }
-        
         guard icmpHeader.type == ICMPType.EchoReply.rawValue else {
             throw PingError.invalidType(received: icmpHeader.type)
         }
