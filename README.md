@@ -28,6 +28,12 @@ once?.startPinging()
 ### Installation
 Just drop the SwiftyPing.swift file to your project.  Using SwiftyPing for a Mac application requires allowing Network->Incoming Connections and Network->Outgoing Connections in the application sandbox.
 
+You can also use Swift Package Manager:
+
+```swift
+.Package(url: "https://github.com/samiyr/SwiftyPing.git", branch: "master")
+```
+
 ### Future development and contributions
 I made this project based on what I need, so I probably won't be adding any features unless I really need them. I will maintain it (meaning bug fixes and support for new Swift versions) for some time at least. However, you can submit a pull request and I'll take a look. Please try to keep the overall coding style.
 
