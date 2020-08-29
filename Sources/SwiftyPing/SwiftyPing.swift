@@ -11,11 +11,18 @@ import Darwin
 
 public typealias Observer = ((_ response: PingResponse) -> Void)
 
+/// Represents a ping delegate.
+public protocol PingDelegate {
+    /// Called when a ping response is received.
+    /// - Parameter response: A `PingResponse` object representing the echo reply.
+    func didReceive(response: PingResponse)
+}
+
 /// Describes all possible errors thrown within `SwiftyPing`
 public enum PingError: Error, Equatable {
     // Response errors
     
-    /// The response took longer to arrive than `configuration.timeoutInterval`
+    /// The response took longer to arrive than `configuration.timeoutInterval`.
     case responseTimeout
     
     // Response validation errors
@@ -52,11 +59,11 @@ public enum PingError: Error, Equatable {
     case requestTimeout
     
     // Internal errors
-    /// Checksum is out-of-bounds for `UInt16` in `computeCheckSum`. The underlying cause should eventually be fixed, but this patch ensures that it will fail gracefully instead of crashing.
+    /// Checksum is out-of-bounds for `UInt16` in `computeCheckSum`. This shouldn't occur, but if it does, this error ensures that the app won't crash.
     case checksumOutOfBounds
-    /// Unexpected payload length
+    /// Unexpected payload length.
     case unexpectedPayloadLength
-    /// Unspecified package creation error
+    /// Unspecified package creation error.
     case packageCreationFailed
     /// For some reason, the socket is `nil`. This shouldn't ever happen, but just in case...
     case socketNil
@@ -64,6 +71,7 @@ public enum PingError: Error, Equatable {
 
 // MARK: SwiftyPing
 
+/// Class representing socket info, which contains a `SwiftyPing` instance and the identifier.
 public class SocketInfo {
     public let pinger: SwiftyPing
     public let identifier: UInt16
@@ -74,6 +82,7 @@ public class SocketInfo {
     }
 }
 
+/// Represents a single ping instance. A ping instance has a single destination.
 public class SwiftyPing: NSObject {
     /// Describes the ping host destination.
     public struct Destination {
@@ -132,6 +141,8 @@ public class SwiftyPing: NSObject {
     public let configuration: PingConfiguration
     /// This closure gets called with ping responses.
     public var observer: Observer?
+    /// This delegate gets called with ping responses.
+    public var delegate: PingDelegate?
     /// The number of pings to make. Default is `nil`, which means no limit.
     public var targetCount: Int?
 
@@ -161,6 +172,9 @@ public class SwiftyPing: NSObject {
     }
     
     /// Initializes a pinger.
+    /// - Parameter destination: Specifies the host.
+    /// - Parameter configuration: A configuration object which can be used to customize pinging behavior.
+    /// - Parameter queue: All responses are delivered through this dispatch queue.
     public init(destination: Destination, configuration: PingConfiguration, queue: DispatchQueue) {
         self.destination = destination
         self.configuration = configuration
@@ -191,6 +205,10 @@ public class SwiftyPing: NSObject {
     }
 
     // MARK: - Convenience Initializers
+    /// Initializes a pinger from an IPv4 address string.
+    /// - Parameter ipv4Address: The host's IP address.
+    /// - Parameter configuration: A configuration object which can be used to customize pinging behavior.
+    /// - Parameter queue: All responses are delivered through this dispatch queue.
     public convenience init(ipv4Address: String, config configuration: PingConfiguration, queue: DispatchQueue) {
         var socketAddress = sockaddr_in()
         memset(&socketAddress, 0, MemoryLayout<sockaddr_in>.size)
@@ -204,6 +222,11 @@ public class SwiftyPing: NSObject {
         let destination = Destination(host: ipv4Address, ipv4Address: data as Data)
         self.init(destination: destination, configuration: configuration, queue: queue)
     }
+    /// Initializes a pinger from a given host string.
+    /// - Parameter host: A string describing the host. This can be an IP address or host name.
+    /// - Parameter configuration: A configuration object which can be used to customize pinging behavior.
+    /// - Parameter queue: All responses are delivered through this dispatch queue.
+    /// - Throws: A `PingError` if the given host could not be resolved.
     public convenience init(host: String, configuration: PingConfiguration, queue: DispatchQueue) throws {
         let result = try Destination.getIPv4AddressFromHost(host: host)
         let destination = Destination(host: host, ipv4Address: result)
@@ -304,6 +327,7 @@ public class SwiftyPing: NSObject {
         if killswitch { return }
         currentQueue.sync {
             self.observer?(response)
+            self.delegate?.didReceive(response: response)
         }
     }
     
@@ -338,11 +362,14 @@ public class SwiftyPing: NSObject {
             _serial.sync { self._killswitch = newValue }
         }
     }
+    
+    /// Start pinging the host.
     public func startPinging() {
         killswitch = false
         sendPing()
     }
     
+    /// Stop pinging the host.
     public func stopPinging() {
         killswitch = true
         targetCount = 0
@@ -515,21 +542,36 @@ public class SwiftyPing: NSObject {
 
 // MARK: - Helpers
 
+/// A struct encapsulating a ping response.
 public struct PingResponse {
+    /// The randomly generated identifier used in the ping header.
     public let identifier: UInt16
+    /// The IP address of the host.
     public let ipAddress: String?
+    /// Running sequence number, starting from 0.
     public let sequenceNumber: Int
+    /// Roundtrip time.
     public let duration: TimeInterval
+    /// An error associated with the response.
     public let error: PingError?
 }
+/// Controls pinging behaviour.
 public struct PingConfiguration {
+    /// The time between consecutive pings in seconds.
     let pingInterval: TimeInterval
+    /// Timeout interval in seconds.
     let timeoutInterval: TimeInterval
     
+    /// Initializes a `PingConfiguration` object with the given parameters.
+    /// - Parameter interval: The time between consecutive pings in seconds. Defaults to 1.
+    /// - Parameter timeout: Timeout interval in seconds. Defaults to 5.
     public init(interval: TimeInterval = 1, with timeout: TimeInterval = 5) {
         pingInterval = interval
         timeoutInterval = timeout
     }
+    /// Initializes a `PingConfiguration` object with the given interval.
+    /// - Parameter interval: The time between consecutive pings in seconds.
+    /// - Note: Timeout interval will be set to 5 seconds.
     public init(interval: TimeInterval) {
         self.init(interval: interval, with: 5)
     }
@@ -538,6 +580,7 @@ public struct PingConfiguration {
 // MARK: - Data Extensions
 
 public extension Data {
+    /// Expresses a chunk of data as a socket address.
     var socketAddress: sockaddr? {
         return self.withUnsafeBytes { (pointer: UnsafeRawBufferPointer) -> sockaddr? in
             let raw = pointer.baseAddress
@@ -545,6 +588,7 @@ public extension Data {
             return address
         }
     }
+    /// Expresses a chunk of data as an internet-style socket address.
     var socketAddressInternet: sockaddr_in? {
         return self.withUnsafeBytes { (pointer: UnsafeRawBufferPointer) -> sockaddr_in? in
             let raw = pointer.baseAddress
