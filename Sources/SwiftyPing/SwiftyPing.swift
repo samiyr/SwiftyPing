@@ -54,6 +54,8 @@ public enum PingError: Error, Equatable {
     // Internal errors
     /// Checksum is out-of-bounds for `UInt16` in `computeCheckSum`. The underlying cause should eventually be fixed, but this patch ensures that it will fail gracefully instead of crashing.
     case checksumOutOfBounds
+    /// Unexpected payload length
+    case unexpectedPayloadLength
     /// Unspecified package creation error
     case packageCreationFailed
     /// For some reason, the socket is `nil`. This shouldn't ever happen, but just in case...
@@ -130,15 +132,13 @@ public class SwiftyPing: NSObject {
     public let configuration: PingConfiguration
     /// This closure gets called with ping responses.
     public var observer: Observer?
+    /// The number of pings to make. Default is `nil`, which means no limit.
+    public var targetCount: Int?
+
     /// A random identifier which is a part of the ping request.
     private let identifier = UInt16.random(in: 0..<UInt16.max)
     /// A random UUID fingerprint sent as the payload.
     private let fingerprint = UUID()
-    
-    private var fingerprintData: Data? {
-        return fingerprint.uuidString.data(using: .ascii)
-    }
-    
     /// User-specified dispatch queue. The `observer` is always called from this queue.
     private let currentQueue: DispatchQueue
     
@@ -160,9 +160,6 @@ public class SwiftyPing: NSObject {
         }
     }
     
-    /// The number of pings to make. Default is `nil`, which means no limit.
-    public var targetCount: Int?
-    
     /// Initializes a pinger.
     public init(destination: Destination, configuration: PingConfiguration, queue: DispatchQueue) {
         self.destination = destination
@@ -180,10 +177,6 @@ public class SwiftyPing: NSObject {
             // Socket callback closure
             guard let socket = socket, let info = info else { return }
             let socketInfo: SocketInfo = Unmanaged.fromOpaque(info).takeUnretainedValue()
-            guard socketInfo.pinger.identifier == socketInfo.identifier else {
-                print("mismatch")
-                return
-            }
             let ping = socketInfo.pinger
             if (type as CFSocketCallBackType) == CFSocketCallBackType.dataCallBack {
                 let cfdata = Unmanaged<NSData>.fromOpaque(data!).takeUnretainedValue() as Data
@@ -262,16 +255,8 @@ public class SwiftyPing: NSObject {
         currentQueue.async {
             let address = self.destination.ipv4Address
             do {
-                let pkg = try self.createICMPPackage(identifier: UInt16(self.identifier), sequenceNumber: UInt16(self.sequenceIndex), payloadSize: Int(self.configuration.payloadSize))
+                let icmpPackage = try self.createICMPPackage(identifier: UInt16(self.identifier), sequenceNumber: UInt16(self.sequenceIndex))
                 
-                guard let icmpPackage = pkg else {
-                    // package is nil
-                    let response = PingResponse(identifier: self.identifier, ipAddress: self.destination.ip ?? "", sequenceNumber: self.sequenceIndex, duration: Date().timeIntervalSince(self.sequenceStart ?? Date()), error: .packageCreationFailed)
-                    self.isPinging = false
-                    self.informObserver(of: response)
-                    
-                    return self.scheduleNextPing()
-                }
                 guard let socket = self.socket else { return }
                 let socketError = CFSocketSendData(socket, address as CFData, icmpPackage as CFData, self.configuration.timeoutInterval)
 
@@ -311,7 +296,7 @@ public class SwiftyPing: NSObject {
         self.isPinging = false
         informObserver(of: response)
 
-        sequenceIndex += 1
+        incrementSequenceIndex()
         scheduleNextPing()
     }
     
@@ -366,6 +351,15 @@ public class SwiftyPing: NSObject {
         sequenceStart = nil
     }
     
+    private func incrementSequenceIndex() {
+        // Handle overflow gracefully
+        if sequenceIndex >= Int.max {
+            sequenceIndex = 0
+        } else {
+            sequenceIndex += 1
+        }
+    }
+    
     // MARK: - Socket callback
     private func socket(socket: CFSocket, didReadData data: Data?) {
         timeoutTimer?.invalidate()
@@ -389,64 +383,45 @@ public class SwiftyPing: NSObject {
         isPinging = false
         informObserver(of: response)
         
-        self.sequenceIndex += 1
+        incrementSequenceIndex()
         scheduleNextPing()
     }
 
     // MARK: - ICMP package
     
-    /// Creates an ICMP package. Currently, the `payloadSize` is not respected, but the payload is always 56 bytes.
-    private func createICMPPackage(identifier: UInt16, sequenceNumber: UInt16, payloadSize: Int) throws -> NSData? {
-        var icmpType = ICMPType.EchoRequest.rawValue
-        var icmpCode: UInt8 = 0
-        var icmpChecksum: UInt16 = 0
-        var icmpIdentifier = CFSwapInt16HostToBig(identifier)
-        var icmpSequence = CFSwapInt16HostToBig(sequenceNumber)
+    /// Creates an ICMP package.
+    private func createICMPPackage(identifier: UInt16, sequenceNumber: UInt16) throws -> Data {
+        var header = ICMPHeader(type: ICMPType.EchoRequest.rawValue, code: 0, checksum: 0, identifier: CFSwapInt16HostToBig(identifier), sequenceNumber: CFSwapInt16HostToBig(sequenceNumber), payload: fingerprint.uuid)
+                
+        let checksum = try computeChecksum(header: header)
+        header.checksum = checksum
         
-//        let count = 99 - sequenceNumber % 100
-//        let payloadString = fingerprint.uuidString
-        guard let payload = fingerprintData else { return nil }
-        guard let package = NSMutableData(length: MemoryLayout<ICMPHeader>.size + payload.count) else { return nil }
-        
-        package.replaceBytes(in: NSRange(location: 0, length: 1), withBytes: &icmpType)
-        package.replaceBytes(in: NSRange(location: 1, length: 1), withBytes: &icmpCode)
-        package.replaceBytes(in: NSRange(location: 2, length: 2), withBytes: &icmpChecksum)
-        package.replaceBytes(in: NSRange(location: 4, length: 2), withBytes: &icmpIdentifier)
-        package.replaceBytes(in: NSRange(location: 6, length: 2), withBytes: &icmpSequence)
-        package.replaceBytes(in: NSRange(location: 8, length: payload.count), withBytes: NSData(data: payload).bytes)
-
-        var checksum = try computeCheckSum(buffer: package.mutableBytes, bufLen: package.length)
-        package.replaceBytes(in: NSRange(location: 2, length: 2), withBytes: &checksum)
-        
-        return package
+        return Data(bytes: &header, count: MemoryLayout<ICMPHeader>.size)
     }
     
-    private func computeCheckSum(buffer: UnsafeMutableRawPointer, bufLen: Int) throws -> UInt16 {
-        var bytesLeft = bufLen
-        var checksum: Int32 = 0
-        var buf = buffer.assumingMemoryBound(to: UInt16.self)
-
-        while bytesLeft > 1 {
-            checksum += Int32(buf.pointee)
-            buf = buf.successor()
-            bytesLeft -= 2
-        }
-
-        if bufLen == 1 {
-            checksum += Int32(UnsafeMutablePointer<UInt16>(buf).pointee)
-        }
-        checksum = (checksum >> 16) + (checksum & 0xFFFF)
-        checksum += checksum >> 16
+    private func computeChecksum(header: ICMPHeader) throws -> UInt16 {
+        let typecode = Data([header.type, header.code]).withUnsafeBytes { $0.load(as: UInt16.self) }
+        var sum = UInt64(typecode) + UInt64(header.identifier) + UInt64(header.sequenceNumber)
+        let payload = convert(payload: header.payload)
         
-        let intermediate = Int32(UInt16.max) + ~checksum
-        guard intermediate >= 0, intermediate < UInt16.max else {
-            throw PingError.checksumOutOfBounds
-        }
+        guard payload.count % 2 == 0 else { throw PingError.unexpectedPayloadLength }
         
-        let answer = UInt16(Int32(UInt16.max) + ~checksum) + 1
-        return answer
+        var i = 0
+        while i < payload.count {
+            guard payload.indices.contains(i + 1) else { throw PingError.unexpectedPayloadLength }
+            // Convert two 8 byte ints to one 16 byte int
+            sum += Data([payload[i], payload[i + 1]]).withUnsafeBytes { UInt64($0.load(as: UInt16.self)) }
+            i += 2
+        }
+        while sum >> 16 != 0 {
+            sum = (sum & 0xffff) + (sum >> 16)
+        }
+
+        guard sum < UInt16.max else { throw PingError.checksumOutOfBounds }
+        
+        return ~UInt16(sum)
     }
-    
+        
     private func icmpHeaderOffset(of packet: Data) -> Int? {
         if packet.count >= MemoryLayout<IPHeader>.size + MemoryLayout<ICMPHeader>.size {
             let ipHeader = packet.withUnsafeBytes({ $0.load(as: IPHeader.self) })
@@ -460,37 +435,28 @@ public class SwiftyPing: NSObject {
         return nil
     }
     
+    private func convert(payload: uuid_t) -> [UInt8] {
+        let p = payload
+        return [p.0, p.1, p.2, p.3, p.4, p.5, p.6, p.7, p.8, p.9, p.10, p.11, p.12, p.13, p.14, p.15].map { UInt8($0) }
+    }
+    
     private func validateResponse(from data: NSData) throws -> Bool {
         guard data.length >= MemoryLayout<ICMPHeader>.size + MemoryLayout<IPHeader>.size else {
             throw PingError.invalidLength(received: data.length)
         }
-        
-        guard let buffer = data.mutableCopy() as? NSMutableData else { return false }
-        
+                
         guard let headerOffset = icmpHeaderOffset(of: data as Data) else { return false }
-        let icmpHeaderDataRaw = buffer.subdata(with: NSRange(location: headerOffset, length: MemoryLayout<ICMPHeader>.size))
+        let icmpHeaderDataRaw = data.subdata(with: NSRange(location: headerOffset, length: MemoryLayout<ICMPHeader>.size))
         let icmpHeader = icmpHeaderDataRaw.withUnsafeBytes({ $0.load(as: ICMPHeader.self) })
         
-        guard let fingerprintData = self.fingerprintData else { return false }
-        // I don't like this hardcoded 28
-        if data.length >= 28 + fingerprintData.count {
-            // Check the payload, which should contain the fingerprint, to make sure that we're handling the correct responses
-            let payload = data.subdata(with: NSRange(location: 28, length: fingerprintData.count))
-            let payloadString = String(data: payload, encoding: .ascii)
-            guard payloadString == fingerprint.uuidString else { return false }
+        let uuid = UUID(uuid: icmpHeader.payload)
+        guard uuid == fingerprint else { return false }
+
+        let checksum = try computeChecksum(header: icmpHeader)
+        
+        guard icmpHeader.checksum == checksum else {
+            throw PingError.checksumMismatch(received: icmpHeader.checksum, calculated: checksum)
         }
-        
-        // TODO: checksum
-//        let receivedChecksum = icmpHeader.checkSum
-//        var alternateHeader = icmpHeader
-//        alternateHeader.checkSum = 0
-//        let calculatedChecksum = computeCheckSum(buffer: &alternateHeader, bufLen: data.count - headerOffset)
-//        icmpHeader.checkSum = receivedChecksum
-        
-//        guard receivedChecksum == calculatedChecksum else {
-//            print("checksum mismatch: \(receivedChecksum), \(calculatedChecksum)")
-//            return false
-//        }
         guard icmpHeader.type == ICMPType.EchoReply.rawValue else {
             throw PingError.invalidType(received: icmpHeader.type)
         }
@@ -506,14 +472,12 @@ public class SwiftyPing: NSObject {
         }
         return true
     }
-    
-
 
 }
 
     // MARK: ICMP
 
-    // Format of IPv4 header
+    /// Format of IPv4 header
     private struct IPHeader {
         var versionAndHeaderLength: UInt8
         var differentiatedServices: UInt8
@@ -523,40 +487,30 @@ public class SwiftyPing: NSObject {
         var timeToLive: UInt8
         var `protocol`: UInt8
         var headerChecksum: UInt16
-        
-        // In C this would be sourceAddress[4],
-        // but as there are no fixed-length
-        // array types in Swift, the array
-        // is manually split to 4 pieces.
-        // This makes the memory layout of
-        // the struct compatable with a ping
-        // response data.
-        var sourceAddress0: UInt8
-        var sourceAddress1: UInt8
-        var sourceAddress2: UInt8
-        var sourceAddress3: UInt8
-        
-        // Same for destinationAddress[4].
-        var destinationAddress0: UInt8
-        var destinationAddress1: UInt8
-        var destinationAddress2: UInt8
-        var destinationAddress3: UInt8
+        var sourceAddress: (UInt8, UInt8, UInt8, UInt8)
+        var destinationAddress: (UInt8, UInt8, UInt8, UInt8)
     }
 
+    /// ICMP header structure
     private struct ICMPHeader {
-        var type: UInt8      /* type of message*/
-        var code: UInt8      /* type sub code */
-        var checkSum: UInt16 /* ones complement cksum of struct */
+        /// Type of message
+        var type: UInt8
+        /// Type sub code
+        var code: UInt8
+        /// One's complement checksum of struct
+        var checksum: UInt16
+        /// Identifier
         var identifier: UInt16
+        /// Sequence number
         var sequenceNumber: UInt16
-//        var data:timeval
+        /// UUID payload
+        var payload: uuid_t
     }
 
-    // ICMP type and code combinations:
-
+    /// ICMP echo types
     public enum ICMPType: UInt8 {
-        case EchoReply = 0           // code is always 0
-        case EchoRequest = 8            // code is always 0
+        case EchoReply = 0
+        case EchoRequest = 8
     }
 
 // MARK: - Helpers
@@ -571,18 +525,13 @@ public struct PingResponse {
 public struct PingConfiguration {
     let pingInterval: TimeInterval
     let timeoutInterval: TimeInterval
-    let payloadSize: UInt64
     
-    public init(interval: TimeInterval = 1, with timeout: TimeInterval = 5, and payload: UInt64 = 64) {
+    public init(interval: TimeInterval = 1, with timeout: TimeInterval = 5) {
         pingInterval = interval
         timeoutInterval = timeout
-        payloadSize = payload
     }
     public init(interval: TimeInterval) {
         self.init(interval: interval, with: 5)
-    }
-    public init(interval: TimeInterval, with timeout: TimeInterval) {
-        self.init(interval: interval, with: timeout, and: 64)
     }
 }
 
