@@ -32,7 +32,7 @@ class ViewController: UIViewController {
         }
         ping?.observer = { (response) in
             DispatchQueue.main.async {
-                var message = "\(response.duration * 1000) ms"
+                var message = "\(response.duration! * 1000) ms"
                 if let error = response.error {
                     if error == .responseTimeout {
                         message = "Timeout \(message)"
