@@ -292,7 +292,13 @@ public class SwiftyPing: NSObject {
                     case .timeout: error = .requestTimeout
                     default: break
                     }
-                    let response = PingResponse(identifier: self.identifier, ipAddress: self.destination.ip ?? "", sequenceNumber: self.sequenceIndex, duration: self.timeIntervalSinceStart, error: error, byteCount: nil)
+                    let response = PingResponse(identifier: self.identifier,
+                                                ipAddress: self.destination.ip,
+                                                sequenceNumber: self.sequenceIndex,
+                                                duration: self.timeIntervalSinceStart,
+                                                error: error,
+                                                byteCount: nil,
+                                                ipHeader: nil)
                     self.isPinging = false
                     self.informObserver(of: response)
                     
@@ -305,7 +311,13 @@ public class SwiftyPing: NSObject {
                 } else {
                     pingError = .packageCreationFailed
                 }
-                let response = PingResponse(identifier: self.identifier, ipAddress: self.destination.ip, sequenceNumber: self.sequenceIndex, duration: self.timeIntervalSinceStart, error: pingError, byteCount: nil)
+                let response = PingResponse(identifier: self.identifier,
+                                            ipAddress: self.destination.ip,
+                                            sequenceNumber: self.sequenceIndex,
+                                            duration: self.timeIntervalSinceStart,
+                                            error: pingError,
+                                            byteCount: nil,
+                                            ipHeader: nil)
                 self.isPinging = false
                 self.informObserver(of: response)
                 
@@ -323,7 +335,13 @@ public class SwiftyPing: NSObject {
 
     @objc private func timeout() {
         let error = PingError.responseTimeout
-        let response = PingResponse(identifier: self.identifier, ipAddress: self.destination.ip, sequenceNumber: self.sequenceIndex, duration: timeIntervalSinceStart, error: error, byteCount: nil)
+        let response = PingResponse(identifier: self.identifier,
+                                    ipAddress: self.destination.ip,
+                                    sequenceNumber: self.sequenceIndex,
+                                    duration: timeIntervalSinceStart,
+                                    error: error,
+                                    byteCount: nil,
+                                    ipHeader: nil)
         self.isPinging = false
         informObserver(of: response)
 
@@ -412,8 +430,14 @@ public class SwiftyPing: NSObject {
         } catch {
             print("Unhandled error thrown: \(error)")
         }
-        
-        let response = PingResponse(identifier: identifier, ipAddress: destination.ip, sequenceNumber: sequenceIndex, duration: timeIntervalSinceStart, error: validationError, byteCount: data.count)
+        let ipHeader = data.withUnsafeBytes({ $0.load(as: IPHeader.self) })
+        let response = PingResponse(identifier: identifier,
+                                    ipAddress: destination.ip,
+                                    sequenceNumber: sequenceIndex,
+                                    duration: timeIntervalSinceStart,
+                                    error: validationError,
+                                    byteCount: data.count,
+                                    ipHeader: ipHeader)
         isPinging = false
         informObserver(of: response)
         
@@ -435,7 +459,8 @@ public class SwiftyPing: NSObject {
         let checksum = try computeChecksum(header: header)
         header.checksum = checksum
         
-        return Data(bytes: &header, count: MemoryLayout<ICMPHeader>.size)
+        let package = Data(bytes: &header, count: MemoryLayout<ICMPHeader>.size)
+        return package
     }
     
     private func computeChecksum(header: ICMPHeader) throws -> UInt16 {
@@ -519,7 +544,7 @@ public class SwiftyPing: NSObject {
     // MARK: ICMP
 
     /// Format of IPv4 header
-    private struct IPHeader {
+    public struct IPHeader {
         var versionAndHeaderLength: UInt8
         var differentiatedServices: UInt8
         var totalLength: UInt16
@@ -570,6 +595,8 @@ public struct PingResponse {
     public let error: PingError?
     /// Response data packet size in bytes.
     public let byteCount: Int?
+    /// Response IP header.
+    public let ipHeader: IPHeader?
 }
 /// Controls pinging behaviour.
 public struct PingConfiguration {
