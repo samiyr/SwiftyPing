@@ -430,7 +430,10 @@ public class SwiftyPing: NSObject {
         } catch {
             print("Unhandled error thrown: \(error)")
         }
-        let ipHeader = data.withUnsafeBytes({ $0.load(as: IPHeader.self) })
+        var ipHeader: IPHeader? = nil
+        if validationError == nil {
+            ipHeader = data.withUnsafeBytes({ $0.load(as: IPHeader.self) })
+        }
         let response = PingResponse(identifier: identifier,
                                     ipAddress: destination.ip,
                                     sequenceNumber: sequenceIndex,
