@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="17132" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES" initialViewController="lgE-h0-jsg">
+<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="16097.3" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES" initialViewController="lgE-h0-jsg">
     <device id="retina4_7" orientation="portrait" appearance="light"/>
     <dependencies>
         <deployment identifier="iOS"/>
-        <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="17105.1"/>
+        <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="16087"/>
         <capability name="Safe area layout guides" minToolsVersion="9.0"/>
         <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
     </dependencies>
@@ -24,7 +24,6 @@
                                 <textInputTraits key="textInputTraits" autocapitalizationType="sentences"/>
                             </textView>
                         </subviews>
-                        <viewLayoutGuide key="safeArea" id="6Tk-OE-BBY"/>
                         <color key="backgroundColor" red="1" green="1" blue="1" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
                         <constraints>
                             <constraint firstItem="6Tk-OE-BBY" firstAttribute="bottom" secondItem="ioa-2w-cIc" secondAttribute="bottom" id="7M1-fr-zgK"/>
@@ -32,6 +31,7 @@
                             <constraint firstItem="ioa-2w-cIc" firstAttribute="leading" secondItem="6Tk-OE-BBY" secondAttribute="leading" constant="16" id="eK0-4g-Fpg"/>
                             <constraint firstItem="ioa-2w-cIc" firstAttribute="top" secondItem="6Tk-OE-BBY" secondAttribute="top" id="t4H-c8-l7M"/>
                         </constraints>
+                        <viewLayoutGuide key="safeArea" id="6Tk-OE-BBY"/>
                     </view>
                     <navigationItem key="navigationItem" id="mre-sB-hD2">
                         <barButtonItem key="leftBarButtonItem" title="Start" id="Izm-lN-Xhw">
@@ -39,11 +39,18 @@
                                 <action selector="start:" destination="BYZ-38-t0r" id="ctF-Zl-NDg"/>
                             </connections>
                         </barButtonItem>
-                        <barButtonItem key="rightBarButtonItem" title="Stop" id="pm0-RX-ZTt">
-                            <connections>
-                                <action selector="stop:" destination="BYZ-38-t0r" id="B5N-qX-YdH"/>
-                            </connections>
-                        </barButtonItem>
+                        <rightBarButtonItems>
+                            <barButtonItem title="Halt" id="R0E-pd-HMe">
+                                <connections>
+                                    <action selector="halt:" destination="BYZ-38-t0r" id="Vne-v5-Mpf"/>
+                                </connections>
+                            </barButtonItem>
+                            <barButtonItem title="Stop" id="pm0-RX-ZTt">
+                                <connections>
+                                    <action selector="stop:" destination="BYZ-38-t0r" id="B5N-qX-YdH"/>
+                                </connections>
+                            </barButtonItem>
+                        </rightBarButtonItems>
                     </navigationItem>
                     <connections>
                         <outlet property="textView" destination="ioa-2w-cIc" id="Vlw-ef-m5f"/>

@@ -9,6 +9,10 @@
 import Foundation
 import Darwin
 
+#if os(iOS)
+import UIKit
+#endif
+
 public typealias Observer = ((_ response: PingResponse) -> Void)
 
 /// Represents a ping delegate.
@@ -69,6 +73,8 @@ public enum PingError: Error, Equatable {
     case socketNil
     /// The ICMP header offset couldn't be calculated.
     case invalidHeaderOffset
+    /// Failed to change socket options, in particular SIGPIPE.
+    case socketOptionsSetError(err: Int32)
 }
 
 // MARK: SwiftyPing
@@ -177,19 +183,81 @@ public class SwiftyPing: NSObject {
     /// - Parameter destination: Specifies the host.
     /// - Parameter configuration: A configuration object which can be used to customize pinging behavior.
     /// - Parameter queue: All responses are delivered through this dispatch queue.
-    public init(destination: Destination, configuration: PingConfiguration, queue: DispatchQueue) {
+    public init(destination: Destination, configuration: PingConfiguration, queue: DispatchQueue) throws {
         self.destination = destination
         self.configuration = configuration
         self.currentQueue = queue
                 
         super.init()
+        try createSocket()
+        
+        #if os(iOS)
+        if configuration.handleBackgroundTransitions {
+            addAppStateNotifications()
+        }
+        #endif
+    }
+    
+    #if os(iOS)
+    /// Adds notification observers for iOS app state changes.
+    private func addAppStateNotifications() {
+        NotificationCenter.default.addObserver(self, selector: #selector(didEnterBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(didEnterForeground), name: UIApplication.didBecomeActiveNotification, object: nil)
+    }
+    
+    /// A flag to determine whether the pinger was halted automatically by an app state change.
+    private var autoHalted = false
+    /// Called on `UIApplication.didEnterBackgroundNotification`.
+    @objc private func didEnterBackground() {
+        autoHalted = true
+        haltPinging(resetSequence: false)
+    }
+    /// Called on ` UIApplication.didBecomeActiveNotification`.
+    @objc private func didEnterForeground() {
+        if autoHalted {
+            autoHalted = false
+            try? startPinging()
+        }
+    }
+    #endif
 
+    // MARK: - Convenience Initializers
+    /// Initializes a pinger from an IPv4 address string.
+    /// - Parameter ipv4Address: The host's IP address.
+    /// - Parameter configuration: A configuration object which can be used to customize pinging behavior.
+    /// - Parameter queue: All responses are delivered through this dispatch queue.
+    public convenience init(ipv4Address: String, config configuration: PingConfiguration, queue: DispatchQueue) throws {
+        var socketAddress = sockaddr_in()
+        
+        socketAddress.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        socketAddress.sin_family = UInt8(AF_INET)
+        socketAddress.sin_port = 0
+        socketAddress.sin_addr.s_addr = inet_addr(ipv4Address.cString(using: .utf8))
+        let data = Data(bytes: &socketAddress, count: MemoryLayout<sockaddr_in>.size)
+        
+        let destination = Destination(host: ipv4Address, ipv4Address: data)
+        try self.init(destination: destination, configuration: configuration, queue: queue)
+    }
+    /// Initializes a pinger from a given host string.
+    /// - Parameter host: A string describing the host. This can be an IP address or host name.
+    /// - Parameter configuration: A configuration object which can be used to customize pinging behavior.
+    /// - Parameter queue: All responses are delivered through this dispatch queue.
+    /// - Throws: A `PingError` if the given host could not be resolved.
+    public convenience init(host: String, configuration: PingConfiguration, queue: DispatchQueue) throws {
+        let result = try Destination.getIPv4AddressFromHost(host: host)
+        let destination = Destination(host: host, ipv4Address: result)
+        try self.init(destination: destination, configuration: configuration, queue: queue)
+    }
+    
+    /// Initializes a CFSocket.
+    /// - Throws: If setting a socket options flag fails, throws a `PingError.socketOptionsSetError(:)`.
+    private func createSocket() throws {
         // Create a socket context...
         let info = SocketInfo(pinger: self, identifier: identifier)
         var context = CFSocketContext(version: 0, info: Unmanaged.passRetained(info).toOpaque(), retain: nil, release: nil, copyDescription: nil)
 
         // ...and a socket...
-        self.socket = CFSocketCreate(kCFAllocatorDefault, AF_INET, SOCK_DGRAM, IPPROTO_ICMP, CFSocketCallBackType.dataCallBack.rawValue, { socket, type, address, data, info in
+        socket = CFSocketCreate(kCFAllocatorDefault, AF_INET, SOCK_DGRAM, IPPROTO_ICMP, CFSocketCallBackType.dataCallBack.rawValue, { socket, type, address, data, info in
             // Socket callback closure
             guard let socket = socket, let info = info, let data = data else { return }
             let socketInfo = Unmanaged<SocketInfo>.fromOpaque(info).takeUnretainedValue()
@@ -201,37 +269,17 @@ public class SwiftyPing: NSObject {
             
         }, &context)
         
+        // Disable SIGPIPE, see issue #15 on GitHub.
+        let handle = CFSocketGetNative(socket)
+        var value: Int32 = 1
+        let err = setsockopt(handle, SOL_SOCKET, SO_NOSIGPIPE, &value, socklen_t(MemoryLayout.size(ofValue: value)))
+        guard err == 0 else {
+            throw PingError.socketOptionsSetError(err: err)
+        }
+        
         // ...and add it to the main run loop.
         socketSource = CFSocketCreateRunLoopSource(nil, socket, 0)
         CFRunLoopAddSource(CFRunLoopGetMain(), socketSource, .commonModes)
-    }
-
-    // MARK: - Convenience Initializers
-    /// Initializes a pinger from an IPv4 address string.
-    /// - Parameter ipv4Address: The host's IP address.
-    /// - Parameter configuration: A configuration object which can be used to customize pinging behavior.
-    /// - Parameter queue: All responses are delivered through this dispatch queue.
-    public convenience init(ipv4Address: String, config configuration: PingConfiguration, queue: DispatchQueue) {
-        var socketAddress = sockaddr_in()
-        
-        socketAddress.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
-        socketAddress.sin_family = UInt8(AF_INET)
-        socketAddress.sin_port = 0
-        socketAddress.sin_addr.s_addr = inet_addr(ipv4Address.cString(using: .utf8))
-        let data = Data(bytes: &socketAddress, count: MemoryLayout<sockaddr_in>.size)
-        
-        let destination = Destination(host: ipv4Address, ipv4Address: data)
-        self.init(destination: destination, configuration: configuration, queue: queue)
-    }
-    /// Initializes a pinger from a given host string.
-    /// - Parameter host: A string describing the host. This can be an IP address or host name.
-    /// - Parameter configuration: A configuration object which can be used to customize pinging behavior.
-    /// - Parameter queue: All responses are delivered through this dispatch queue.
-    /// - Throws: A `PingError` if the given host could not be resolved.
-    public convenience init(host: String, configuration: PingConfiguration, queue: DispatchQueue) throws {
-        let result = try Destination.getIPv4AddressFromHost(host: host)
-        let destination = Destination(host: host, ipv4Address: result)
-        self.init(destination: destination, configuration: configuration, queue: queue)
     }
 
     // MARK: - Tear-down
@@ -390,18 +438,31 @@ public class SwiftyPing: NSObject {
     }
     
     /// Start pinging the host.
-    public func startPinging() {
+    public func startPinging() throws {
+        if socket == nil {
+            try createSocket()
+        }
         killswitch = false
         sendPing()
     }
     
     /// Stop pinging the host.
-    public func stopPinging() {
+    /// - Parameter resetSequence: Controls whether the sequence index should be set back to zero.
+    public func stopPinging(resetSequence: Bool = true) {
         killswitch = true
-        targetCount = 0
         isPinging = false
-        sequenceIndex = 0
-        sequenceStart = nil
+        if resetSequence {
+            sequenceIndex = 0
+            sequenceStart = nil
+        }
+    }
+    /// Stops pinging the host and destroys the CFSocket object.
+    /// - Parameter resetSequence: Controls whether the sequence index should be set back to zero.
+    public func haltPinging(resetSequence: Bool = true) {
+        stopPinging(resetSequence: resetSequence)
+        CFRunLoopSourceInvalidate(socketSource)
+        socketSource = nil
+        socket = nil
     }
     
     private func incrementSequenceIndex() {
@@ -430,7 +491,10 @@ public class SwiftyPing: NSObject {
         } catch {
             print("Unhandled error thrown: \(error)")
         }
-        let ipHeader = data.withUnsafeBytes({ $0.load(as: IPHeader.self) })
+        var ipHeader: IPHeader? = nil
+        if validationError == nil {
+            ipHeader = data.withUnsafeBytes({ $0.load(as: IPHeader.self) })
+        }
         let response = PingResponse(identifier: identifier,
                                     ipAddress: destination.ip,
                                     sequenceNumber: sequenceIndex,
@@ -604,6 +668,8 @@ public struct PingConfiguration {
     let pingInterval: TimeInterval
     /// Timeout interval in seconds.
     let timeoutInterval: TimeInterval
+    /// If `true`, then `SwiftyPing` will automatically halt and restart the pinging when the app state changes. Only applicable on iOS. If `false`, then the user is responsible for appropriately handling app state changes, see issue #15 on GitHub.
+    var handleBackgroundTransitions = true
     
     /// Initializes a `PingConfiguration` object with the given parameters.
     /// - Parameter interval: The time between consecutive pings in seconds. Defaults to 1.
