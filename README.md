@@ -13,7 +13,7 @@ pinger?.observer = { (response) in
     let duration = response.duration
     print(duration)
 }
-pinger?.startPinging()
+try? pinger?.startPinging()
 
 // Ping once
 let once = try? SwiftyPing(host: "1.1.1.1", configuration: PingConfiguration(interval: 0.5, with: 5), queue: DispatchQueue.global())
@@ -22,7 +22,7 @@ once?.observer = { (response) in
     print(duration)
 }
 once?.targetCount = 1
-once?.startPinging()
+try? once?.startPinging()
 
 ```
 ### Installation
