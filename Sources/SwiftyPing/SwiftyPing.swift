@@ -284,8 +284,10 @@ public class SwiftyPing: NSObject {
 
     // MARK: - Tear-down
     deinit {
-        CFRunLoopSourceInvalidate(socketSource)
-        socketSource = nil
+        if socketSource != nil {
+            CFRunLoopSourceInvalidate(socketSource)
+            socketSource = nil
+        }
         socket = nil
         timeoutTimer?.invalidate()
         timeoutTimer = nil
@@ -460,7 +462,9 @@ public class SwiftyPing: NSObject {
     /// - Parameter resetSequence: Controls whether the sequence index should be set back to zero.
     public func haltPinging(resetSequence: Bool = true) {
         stopPinging(resetSequence: resetSequence)
-        CFRunLoopSourceInvalidate(socketSource)
+        if socketSource != nil {
+            CFRunLoopSourceInvalidate(socketSource)
+        }
         socketSource = nil
         socket = nil
     }
