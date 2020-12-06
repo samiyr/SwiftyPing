@@ -153,6 +153,11 @@ public class SwiftyPing: NSObject {
     public var delegate: PingDelegate?
     /// The number of pings to make. Default is `nil`, which means no limit.
     public var targetCount: Int?
+    
+    /// The current ping count, starting from 0.
+    public var currentCount: Int {
+        return sequenceIndex
+    }
 
     /// A random identifier which is a part of the ping request.
     private let identifier = UInt16.random(in: 0..<UInt16.max)
@@ -480,8 +485,6 @@ public class SwiftyPing: NSObject {
     
     // MARK: - Socket callback
     private func socket(socket: CFSocket, didReadData data: Data?) {
-        timeoutTimer?.invalidate()
-        
         if killswitch { return }
         
         guard let data = data else { return }
@@ -495,6 +498,8 @@ public class SwiftyPing: NSObject {
         } catch {
             print("Unhandled error thrown: \(error)")
         }
+        
+        timeoutTimer?.invalidate()
         var ipHeader: IPHeader? = nil
         if validationError == nil {
             ipHeader = data.withUnsafeBytes({ $0.load(as: IPHeader.self) })
