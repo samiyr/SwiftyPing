@@ -81,7 +81,7 @@ public enum PingError: Error, Equatable {
 
 /// Class representing socket info, which contains a `SwiftyPing` instance and the identifier.
 public class SocketInfo {
-    public let pinger: SwiftyPing
+    public weak var pinger: SwiftyPing?
     public let identifier: UInt16
     
     public init(pinger: SwiftyPing, identifier: UInt16) {
@@ -269,7 +269,7 @@ public class SwiftyPing: NSObject {
             let ping = socketInfo.pinger
             if (type as CFSocketCallBackType) == CFSocketCallBackType.dataCallBack {
                 let cfdata = Unmanaged<CFData>.fromOpaque(data).takeUnretainedValue()
-                ping.socket(socket: socket, didReadData: cfdata as Data)
+                ping?.socket(socket: socket, didReadData: cfdata as Data)
             }
             
         }, &context)
