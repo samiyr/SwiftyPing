@@ -282,6 +282,14 @@ public class SwiftyPing: NSObject {
             throw PingError.socketOptionsSetError(err: err)
         }
         
+        // Set TTL
+        if var ttl = configuration.timeToLive {
+            let err = setsockopt(handle, IPPROTO_IP, IP_TTL, &ttl, socklen_t(MemoryLayout.size(ofValue: ttl)))
+            guard err == 0 else {
+                throw PingError.socketOptionsSetError(err: err)
+            }
+        }
+        
         // ...and add it to the main run loop.
         socketSource = CFSocketCreateRunLoopSource(nil, socket, 0)
         CFRunLoopAddSource(CFRunLoopGetMain(), socketSource, .commonModes)
@@ -679,7 +687,8 @@ public struct PingConfiguration {
     let timeoutInterval: TimeInterval
     /// If `true`, then `SwiftyPing` will automatically halt and restart the pinging when the app state changes. Only applicable on iOS. If `false`, then the user is responsible for appropriately handling app state changes, see issue #15 on GitHub.
     var handleBackgroundTransitions = true
-    
+    /// Sets the TTL flag on the socket. All requests sent from the socket will include the TTL field set to this value.
+    var timeToLive: Int?
     /// Initializes a `PingConfiguration` object with the given parameters.
     /// - Parameter interval: The time between consecutive pings in seconds. Defaults to 1.
     /// - Parameter timeout: Timeout interval in seconds. Defaults to 5.
