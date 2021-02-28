@@ -301,7 +301,10 @@ public class SwiftyPing: NSObject {
             CFRunLoopSourceInvalidate(socketSource)
             socketSource = nil
         }
-        socket = nil
+        if socket != nil {
+            CFSocketInvalidate(socket)
+            socket = nil
+        }
         timeoutTimer?.invalidate()
         timeoutTimer = nil
     }
