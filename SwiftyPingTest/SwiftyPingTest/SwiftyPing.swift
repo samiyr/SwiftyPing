@@ -184,6 +184,7 @@ public class SwiftyPing: NSObject {
         }
     }
     
+    private var erroredIndices = [Int]()
     /// Initializes a pinger.
     /// - Parameter destination: Specifies the host.
     /// - Parameter configuration: A configuration object which can be used to customize pinging behavior.
@@ -365,6 +366,8 @@ public class SwiftyPing: NSObject {
                                                 error: error,
                                                 byteCount: nil,
                                                 ipHeader: nil)
+                   
+                    self.erroredIndices.append(self.sequenceIndex)
                     self.isPinging = false
                     self.informObserver(of: response)
                     
@@ -384,6 +387,7 @@ public class SwiftyPing: NSObject {
                                             error: pingError,
                                             byteCount: nil,
                                             ipHeader: nil)
+                self.erroredIndices.append(self.sequenceIndex)
                 self.isPinging = false
                 self.informObserver(of: response)
                 
@@ -408,6 +412,8 @@ public class SwiftyPing: NSObject {
                                     error: error,
                                     byteCount: nil,
                                     ipHeader: nil)
+        
+        erroredIndices.append(sequenceIndex)
         self.isPinging = false
         informObserver(of: response)
 
@@ -471,6 +477,7 @@ public class SwiftyPing: NSObject {
         isPinging = false
         if resetSequence {
             sequenceIndex = 0
+            erroredIndices.removeAll()
             sequenceStart = nil
         }
     }
@@ -618,6 +625,10 @@ public class SwiftyPing: NSObject {
         }
         let receivedSequenceIndex = CFSwapInt16BigToHost(icmpHeader.sequenceNumber)
         guard receivedSequenceIndex == sequenceIndex else {
+            if erroredIndices.contains(Int(receivedSequenceIndex)) {
+                // This response either errorred or timed out, ignore it
+                return false
+            }
             throw PingError.invalidSequenceIndex(received: Int(receivedSequenceIndex), expected: sequenceIndex)
         }
         return true
