@@ -29,7 +29,7 @@ class ViewController: UIViewController {
     var ping: SwiftyPing?
     func startPinging() {
         do {
-            ping = try SwiftyPing(host: "1.1.1.1", configuration: PingConfiguration(interval: 1.0, with: 1), queue: DispatchQueue.global())
+            ping = try SwiftyPing(host: "1.1.1.1", configuration: PingConfiguration(interval: 5.0, with: 1), queue: DispatchQueue.global())
             ping?.observer = { (response) in
                 DispatchQueue.main.async {
                     var message = "\(response.duration! * 1000) ms"
