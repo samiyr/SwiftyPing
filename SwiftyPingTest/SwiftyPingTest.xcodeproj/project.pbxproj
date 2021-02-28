@@ -13,6 +13,11 @@
 		8880CB8521537EAA007955EA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8880CB8421537EAA007955EA /* Assets.xcassets */; };
 		8880CB8821537EAA007955EA /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 8880CB8621537EAA007955EA /* LaunchScreen.storyboard */; };
 		8880CB9021537EE5007955EA /* SwiftyPing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8880CB8F21537EE5007955EA /* SwiftyPing.swift */; };
+		8893DA5525EBB55700521E78 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8893DA5425EBB55700521E78 /* AppDelegate.swift */; };
+		8893DA5725EBB55700521E78 /* ViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8893DA5625EBB55700521E78 /* ViewController.swift */; };
+		8893DA5925EBB55800521E78 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8893DA5825EBB55800521E78 /* Assets.xcassets */; };
+		8893DA5C25EBB55800521E78 /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 8893DA5A25EBB55800521E78 /* Main.storyboard */; };
+		8893DA6625EBB6CA00521E78 /* SwiftyPing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8880CB8F21537EE5007955EA /* SwiftyPing.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -24,10 +29,24 @@
 		8880CB8721537EAA007955EA /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		8880CB8921537EAA007955EA /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		8880CB8F21537EE5007955EA /* SwiftyPing.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = SwiftyPing.swift; sourceTree = "<group>"; };
+		8893DA5225EBB55700521E78 /* SwiftyPingTestMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SwiftyPingTestMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		8893DA5425EBB55700521E78 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		8893DA5625EBB55700521E78 /* ViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewController.swift; sourceTree = "<group>"; };
+		8893DA5825EBB55800521E78 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		8893DA5B25EBB55800521E78 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
+		8893DA5D25EBB55800521E78 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		8893DA5E25EBB55800521E78 /* SwiftyPingTestMac.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SwiftyPingTestMac.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		8880CB7721537EA8007955EA /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8893DA4F25EBB55700521E78 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -40,7 +59,9 @@
 		8880CB7121537EA8007955EA = {
 			isa = PBXGroup;
 			children = (
+				8880CB8F21537EE5007955EA /* SwiftyPing.swift */,
 				8880CB7C21537EA8007955EA /* SwiftyPingTest */,
+				8893DA5325EBB55700521E78 /* SwiftyPingTestMac */,
 				8880CB7B21537EA8007955EA /* Products */,
 			);
 			sourceTree = "<group>";
@@ -49,6 +70,7 @@
 			isa = PBXGroup;
 			children = (
 				8880CB7A21537EA8007955EA /* SwiftyPingTest.app */,
+				8893DA5225EBB55700521E78 /* SwiftyPingTestMac.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -62,9 +84,21 @@
 				8880CB8421537EAA007955EA /* Assets.xcassets */,
 				8880CB8621537EAA007955EA /* LaunchScreen.storyboard */,
 				8880CB8921537EAA007955EA /* Info.plist */,
-				8880CB8F21537EE5007955EA /* SwiftyPing.swift */,
 			);
 			path = SwiftyPingTest;
+			sourceTree = "<group>";
+		};
+		8893DA5325EBB55700521E78 /* SwiftyPingTestMac */ = {
+			isa = PBXGroup;
+			children = (
+				8893DA5425EBB55700521E78 /* AppDelegate.swift */,
+				8893DA5625EBB55700521E78 /* ViewController.swift */,
+				8893DA5825EBB55800521E78 /* Assets.xcassets */,
+				8893DA5A25EBB55800521E78 /* Main.storyboard */,
+				8893DA5D25EBB55800521E78 /* Info.plist */,
+				8893DA5E25EBB55800521E78 /* SwiftyPingTestMac.entitlements */,
+			);
+			path = SwiftyPingTestMac;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -87,19 +121,39 @@
 			productReference = 8880CB7A21537EA8007955EA /* SwiftyPingTest.app */;
 			productType = "com.apple.product-type.application";
 		};
+		8893DA5125EBB55700521E78 /* SwiftyPingTestMac */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 8893DA6125EBB55800521E78 /* Build configuration list for PBXNativeTarget "SwiftyPingTestMac" */;
+			buildPhases = (
+				8893DA4E25EBB55700521E78 /* Sources */,
+				8893DA4F25EBB55700521E78 /* Frameworks */,
+				8893DA5025EBB55700521E78 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SwiftyPingTestMac;
+			productName = SwiftyPingTestMac;
+			productReference = 8893DA5225EBB55700521E78 /* SwiftyPingTestMac.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
 		8880CB7221537EA8007955EA /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				LastSwiftUpdateCheck = 1000;
+				LastSwiftUpdateCheck = 1240;
 				LastUpgradeCheck = 1200;
 				ORGANIZATIONNAME = "Sami Yrjänheikki";
 				TargetAttributes = {
 					8880CB7921537EA8007955EA = {
 						CreatedOnToolsVersion = 10.0;
 						LastSwiftMigration = 1200;
+					};
+					8893DA5125EBB55700521E78 = {
+						CreatedOnToolsVersion = 12.4;
 					};
 				};
 			};
@@ -117,6 +171,7 @@
 			projectRoot = "";
 			targets = (
 				8880CB7921537EA8007955EA /* SwiftyPingTest */,
+				8893DA5125EBB55700521E78 /* SwiftyPingTestMac */,
 			);
 		};
 /* End PBXProject section */
@@ -132,6 +187,15 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		8893DA5025EBB55700521E78 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8893DA5925EBB55800521E78 /* Assets.xcassets in Resources */,
+				8893DA5C25EBB55800521E78 /* Main.storyboard in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -142,6 +206,16 @@
 				8880CB9021537EE5007955EA /* SwiftyPing.swift in Sources */,
 				8880CB8021537EA8007955EA /* ViewController.swift in Sources */,
 				8880CB7E21537EA8007955EA /* AppDelegate.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8893DA4E25EBB55700521E78 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8893DA6625EBB6CA00521E78 /* SwiftyPing.swift in Sources */,
+				8893DA5725EBB55700521E78 /* ViewController.swift in Sources */,
+				8893DA5525EBB55700521E78 /* AppDelegate.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -162,6 +236,14 @@
 				8880CB8721537EAA007955EA /* Base */,
 			);
 			name = LaunchScreen.storyboard;
+			sourceTree = "<group>";
+		};
+		8893DA5A25EBB55800521E78 /* Main.storyboard */ = {
+			isa = PBXVariantGroup;
+			children = (
+				8893DA5B25EBB55800521E78 /* Base */,
+			);
+			name = Main.storyboard;
 			sourceTree = "<group>";
 		};
 /* End PBXVariantGroup section */
@@ -321,6 +403,52 @@
 			};
 			name = Release;
 		};
+		8893DA5F25EBB55800521E78 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = SwiftyPingTestMac/SwiftyPingTestMac.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = 382EB97XNX;
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = SwiftyPingTestMac/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 11.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.samiyrjanheikki.SwiftyPingTestMac;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		8893DA6025EBB55800521E78 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = SwiftyPingTestMac/SwiftyPingTestMac.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = 382EB97XNX;
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = SwiftyPingTestMac/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 11.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.samiyrjanheikki.SwiftyPingTestMac;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -338,6 +466,15 @@
 			buildConfigurations = (
 				8880CB8D21537EAA007955EA /* Debug */,
 				8880CB8E21537EAA007955EA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		8893DA6125EBB55800521E78 /* Build configuration list for PBXNativeTarget "SwiftyPingTestMac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8893DA5F25EBB55800521E78 /* Debug */,
+				8893DA6025EBB55800521E78 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

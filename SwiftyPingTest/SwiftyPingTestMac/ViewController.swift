@@ -1,20 +1,21 @@
 //
 //  ViewController.swift
-//  SwiftyPingTest
+//  SwiftyPingTestMac
 //
-//  Created by Sami Yrjänheikki on 20/09/2018.
-//  Copyright © 2018 Sami Yrjänheikki. All rights reserved.
+//  Created by Sami Yrjänheikki on 28.2.2021.
+//  Copyright © 2021 Sami Yrjänheikki. All rights reserved.
 //
 
-import UIKit
+import Cocoa
 
-class ViewController: UIViewController {
+class ViewController: NSViewController {
 
-    @IBOutlet weak var textView: UITextView!
+    @IBOutlet var textView: NSTextView!
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        textView.text = ""
+        textView.string = ""
+        textView.isEditable = false
     }
     
     @IBAction func start(_ sender: Any) {
@@ -41,15 +42,16 @@ class ViewController: UIViewController {
                             message = error.localizedDescription
                         }
                     }
-                    self.textView.text.append(contentsOf: "\nPing #\(response.sequenceNumber): \(message)")
-                    self.textView.scrollRangeToVisible(NSRange(location: self.textView.text.count - 1, length: 1))
+                    self.textView.string.append(contentsOf: "\nPing #\(response.sequenceNumber): \(message)")
+                    self.textView.scrollRangeToVisible(NSRange(location: self.textView.string.count - 1, length: 1))
                 }
             }
 //            ping?.targetCount = 1
             try ping?.startPinging()
         } catch {
-            textView.text = error.localizedDescription
+            textView.string = error.localizedDescription
         }
     }
+
 }
 
