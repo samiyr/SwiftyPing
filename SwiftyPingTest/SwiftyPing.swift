@@ -547,17 +547,23 @@ public class SwiftyPing: NSObject {
                                 sequenceNumber: CFSwapInt16HostToBig(sequenceNumber),
                                 payload: fingerprint.uuid)
                 
-        let checksum = try computeChecksum(header: header)
+        let delta = configuration.payloadSize - MemoryLayout<uuid_t>.size
+        var additional = [UInt8]()
+        if delta > 0 {
+            additional = (0..<delta).map { _ in UInt8.random(in: UInt8.min...UInt8.max) }
+        }
+
+        let checksum = try computeChecksum(header: header, additionalPayload: additional)
         header.checksum = checksum
         
-        let package = Data(bytes: &header, count: MemoryLayout<ICMPHeader>.size)
+        let package = Data(bytes: &header, count: MemoryLayout<ICMPHeader>.size) + Data(additional)
         return package
     }
     
-    private func computeChecksum(header: ICMPHeader) throws -> UInt16 {
+    private func computeChecksum(header: ICMPHeader, additionalPayload: [UInt8]) throws -> UInt16 {
         let typecode = Data([header.type, header.code]).withUnsafeBytes { $0.load(as: UInt16.self) }
         var sum = UInt64(typecode) + UInt64(header.identifier) + UInt64(header.sequenceNumber)
-        let payload = convert(payload: header.payload)
+        let payload = convert(payload: header.payload) + additionalPayload
         
         guard payload.count % 2 == 0 else { throw PingError.unexpectedPayloadLength }
         
@@ -601,7 +607,9 @@ public class SwiftyPing: NSObject {
         }
                 
         guard let headerOffset = icmpHeaderOffset(of: data) else { throw PingError.invalidHeaderOffset }
+        let payloadSize = data.count - headerOffset - MemoryLayout<ICMPHeader>.size
         let icmpHeader = data.withUnsafeBytes({ $0.load(fromByteOffset: headerOffset, as: ICMPHeader.self) })
+        let payload = data.subdata(in: (data.count - payloadSize)..<data.count)
         
         let uuid = UUID(uuid: icmpHeader.payload)
         guard uuid == fingerprint else {
@@ -609,7 +617,7 @@ public class SwiftyPing: NSObject {
             return false
         }
 
-        let checksum = try computeChecksum(header: icmpHeader)
+        let checksum = try computeChecksum(header: icmpHeader, additionalPayload: [UInt8](payload))
         
         guard icmpHeader.checksum == checksum else {
             throw PingError.checksumMismatch(received: icmpHeader.checksum, calculated: checksum)
@@ -636,43 +644,43 @@ public class SwiftyPing: NSObject {
 
 }
 
-    // MARK: ICMP
+// MARK: ICMP
 
-    /// Format of IPv4 header
-    public struct IPHeader {
-        var versionAndHeaderLength: UInt8
-        var differentiatedServices: UInt8
-        var totalLength: UInt16
-        var identification: UInt16
-        var flagsAndFragmentOffset: UInt16
-        var timeToLive: UInt8
-        var `protocol`: UInt8
-        var headerChecksum: UInt16
-        var sourceAddress: (UInt8, UInt8, UInt8, UInt8)
-        var destinationAddress: (UInt8, UInt8, UInt8, UInt8)
-    }
+/// Format of IPv4 header
+public struct IPHeader {
+    var versionAndHeaderLength: UInt8
+    var differentiatedServices: UInt8
+    var totalLength: UInt16
+    var identification: UInt16
+    var flagsAndFragmentOffset: UInt16
+    var timeToLive: UInt8
+    var `protocol`: UInt8
+    var headerChecksum: UInt16
+    var sourceAddress: (UInt8, UInt8, UInt8, UInt8)
+    var destinationAddress: (UInt8, UInt8, UInt8, UInt8)
+}
 
-    /// ICMP header structure
-    private struct ICMPHeader {
-        /// Type of message
-        var type: UInt8
-        /// Type sub code
-        var code: UInt8
-        /// One's complement checksum of struct
-        var checksum: UInt16
-        /// Identifier
-        var identifier: UInt16
-        /// Sequence number
-        var sequenceNumber: UInt16
-        /// UUID payload
-        var payload: uuid_t
-    }
+/// ICMP header structure
+private struct ICMPHeader {
+    /// Type of message
+    var type: UInt8
+    /// Type sub code
+    var code: UInt8
+    /// One's complement checksum of struct
+    var checksum: UInt16
+    /// Identifier
+    var identifier: UInt16
+    /// Sequence number
+    var sequenceNumber: UInt16
+    /// UUID payload
+    var payload: uuid_t
+}
 
-    /// ICMP echo types
-    public enum ICMPType: UInt8 {
-        case EchoReply = 0
-        case EchoRequest = 8
-    }
+/// ICMP echo types
+public enum ICMPType: UInt8 {
+    case EchoReply = 0
+    case EchoRequest = 8
+}
 
 // MARK: - Helpers
 
@@ -703,6 +711,9 @@ public struct PingConfiguration {
     var handleBackgroundTransitions = true
     /// Sets the TTL flag on the socket. All requests sent from the socket will include the TTL field set to this value.
     var timeToLive: Int?
+    /// Payload size in bytes. The payload always includes a fingerprint, and a payload size smaller than the fingerprint is ignored. By default, only the fingerprint is included in the payload.
+    var payloadSize: Int = MemoryLayout<uuid_t>.size
+
     /// Initializes a `PingConfiguration` object with the given parameters.
     /// - Parameter interval: The time between consecutive pings in seconds. Defaults to 1.
     /// - Parameter timeout: Timeout interval in seconds. Defaults to 5.
