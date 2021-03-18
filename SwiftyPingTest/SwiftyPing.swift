@@ -95,19 +95,19 @@ public class SwiftyPing: NSObject {
     /// Describes the ping host destination.
     public struct Destination {
         /// The host name, can be a IP address or a URL.
-        let host: String
+        public let host: String
         /// IPv4 address of the host.
-        let ipv4Address: Data
+        public let ipv4Address: Data
         /// Socket address of `ipv4Address`.
-        var socketAddress: sockaddr_in? { return ipv4Address.socketAddressInternet }
+        public var socketAddress: sockaddr_in? { return ipv4Address.socketAddressInternet }
         /// IP address of the host.
-        var ip: String? {
+        public var ip: String? {
             guard let address = socketAddress else { return nil }
             return String(cString: inet_ntoa(address.sin_addr), encoding: .ascii)
         }
         
         /// Resolves the `host`.
-        static func getIPv4AddressFromHost(host: String) throws -> Data {
+        public static func getIPv4AddressFromHost(host: String) throws -> Data {
             var streamError = CFStreamError()
             let cfhost = CFHostCreateWithName(nil, host as CFString).takeRetainedValue()
             let status = CFHostStartInfoResolution(cfhost, .addresses, &streamError)
@@ -648,16 +648,16 @@ public class SwiftyPing: NSObject {
 
 /// Format of IPv4 header
 public struct IPHeader {
-    var versionAndHeaderLength: UInt8
-    var differentiatedServices: UInt8
-    var totalLength: UInt16
-    var identification: UInt16
-    var flagsAndFragmentOffset: UInt16
-    var timeToLive: UInt8
-    var `protocol`: UInt8
-    var headerChecksum: UInt16
-    var sourceAddress: (UInt8, UInt8, UInt8, UInt8)
-    var destinationAddress: (UInt8, UInt8, UInt8, UInt8)
+    public var versionAndHeaderLength: UInt8
+    public var differentiatedServices: UInt8
+    public var totalLength: UInt16
+    public var identification: UInt16
+    public var flagsAndFragmentOffset: UInt16
+    public var timeToLive: UInt8
+    public var `protocol`: UInt8
+    public var headerChecksum: UInt16
+    public var sourceAddress: (UInt8, UInt8, UInt8, UInt8)
+    public var destinationAddress: (UInt8, UInt8, UInt8, UInt8)
 }
 
 /// ICMP header structure
@@ -704,15 +704,15 @@ public struct PingResponse {
 /// Controls pinging behaviour.
 public struct PingConfiguration {
     /// The time between consecutive pings in seconds.
-    let pingInterval: TimeInterval
+    public let pingInterval: TimeInterval
     /// Timeout interval in seconds.
-    let timeoutInterval: TimeInterval
+    public let timeoutInterval: TimeInterval
     /// If `true`, then `SwiftyPing` will automatically halt and restart the pinging when the app state changes. Only applicable on iOS. If `false`, then the user is responsible for appropriately handling app state changes, see issue #15 on GitHub.
-    var handleBackgroundTransitions = true
+    public var handleBackgroundTransitions = true
     /// Sets the TTL flag on the socket. All requests sent from the socket will include the TTL field set to this value.
-    var timeToLive: Int?
+    public var timeToLive: Int?
     /// Payload size in bytes. The payload always includes a fingerprint, and a payload size smaller than the fingerprint is ignored. By default, only the fingerprint is included in the payload.
-    var payloadSize: Int = MemoryLayout<uuid_t>.size
+    public var payloadSize: Int = MemoryLayout<uuid_t>.size
 
     /// Initializes a `PingConfiguration` object with the given parameters.
     /// - Parameter interval: The time between consecutive pings in seconds. Defaults to 1.
