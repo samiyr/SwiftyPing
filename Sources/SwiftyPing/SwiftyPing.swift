@@ -272,7 +272,7 @@ public class SwiftyPing: NSObject {
                 let cfdata = Unmanaged<CFData>.fromOpaque(data).takeUnretainedValue()
                 ping?.socket(socket: socket, didReadData: cfdata as Data)
             }
-            
+            _ = Unmanaged<SocketInfo>.fromOpaque(info).takeRetainedValue()
         }, &context)
         
         // Disable SIGPIPE, see issue #15 on GitHub.
