@@ -170,6 +170,9 @@ public class SwiftyPing: NSObject {
     private var socket: CFSocket?
     /// Socket source
     private var socketSource: CFRunLoopSource?
+    /// An unmanaged instance of `SocketInfo` used in the current socket's callback. This must be released manually, otherwise it will leak.
+    private var unmanagedSocketInfo: Unmanaged<SocketInfo>?
+
     
     /// When the current request was sent.
     private var sequenceStart: Date?
@@ -177,10 +180,10 @@ public class SwiftyPing: NSObject {
     private var _sequenceIndex = 0
     private var sequenceIndex: Int {
         get {
-            _serial.sync { self._sequenceIndex }
+            _serial_property.sync { self._sequenceIndex }
         }
         set {
-            _serial.sync { self._sequenceIndex = newValue }
+            _serial_property.sync { self._sequenceIndex = newValue }
         }
     }
     
@@ -258,46 +261,48 @@ public class SwiftyPing: NSObject {
     /// Initializes a CFSocket.
     /// - Throws: If setting a socket options flag fails, throws a `PingError.socketOptionsSetError(:)`.
     private func createSocket() throws {
-        // Create a socket context...
-        let info = SocketInfo(pinger: self, identifier: identifier)
-        var context = CFSocketContext(version: 0, info: Unmanaged.passRetained(info).toOpaque(), retain: nil, release: nil, copyDescription: nil)
+        try _serial.sync {
+            // Create a socket context...
+            let info = SocketInfo(pinger: self, identifier: identifier)
+            unmanagedSocketInfo = Unmanaged.passRetained(info)
+            var context = CFSocketContext(version: 0, info: unmanagedSocketInfo!.toOpaque(), retain: nil, release: nil, copyDescription: nil)
 
-        // ...and a socket...
-        socket = CFSocketCreate(kCFAllocatorDefault, AF_INET, SOCK_DGRAM, IPPROTO_ICMP, CFSocketCallBackType.dataCallBack.rawValue, { socket, type, address, data, info in
-            // Socket callback closure
-            guard let socket = socket, let info = info, let data = data else { return }
-            let socketInfo = Unmanaged<SocketInfo>.fromOpaque(info).takeUnretainedValue()
-            let ping = socketInfo.pinger
-            if (type as CFSocketCallBackType) == CFSocketCallBackType.dataCallBack {
-                let cfdata = Unmanaged<CFData>.fromOpaque(data).takeUnretainedValue()
-                ping?.socket(socket: socket, didReadData: cfdata as Data)
-            }
+            // ...and a socket...
+            socket = CFSocketCreate(kCFAllocatorDefault, AF_INET, SOCK_DGRAM, IPPROTO_ICMP, CFSocketCallBackType.dataCallBack.rawValue, { socket, type, address, data, info in
+                // Socket callback closure
+                guard let socket = socket, let info = info, let data = data else { return }
+                let socketInfo = Unmanaged<SocketInfo>.fromOpaque(info).takeUnretainedValue()
+                let ping = socketInfo.pinger
+                if (type as CFSocketCallBackType) == CFSocketCallBackType.dataCallBack {
+                    let cfdata = Unmanaged<CFData>.fromOpaque(data).takeUnretainedValue()
+                    ping?.socket(socket: socket, didReadData: cfdata as Data)
+                }
+            }, &context)
             
-        }, &context)
-        
-        // Disable SIGPIPE, see issue #15 on GitHub.
-        let handle = CFSocketGetNative(socket)
-        var value: Int32 = 1
-        let err = setsockopt(handle, SOL_SOCKET, SO_NOSIGPIPE, &value, socklen_t(MemoryLayout.size(ofValue: value)))
-        guard err == 0 else {
-            throw PingError.socketOptionsSetError(err: err)
-        }
-        
-        // Set TTL
-        if var ttl = configuration.timeToLive {
-            let err = setsockopt(handle, IPPROTO_IP, IP_TTL, &ttl, socklen_t(MemoryLayout.size(ofValue: ttl)))
+            // Disable SIGPIPE, see issue #15 on GitHub.
+            let handle = CFSocketGetNative(socket)
+            var value: Int32 = 1
+            let err = setsockopt(handle, SOL_SOCKET, SO_NOSIGPIPE, &value, socklen_t(MemoryLayout.size(ofValue: value)))
             guard err == 0 else {
                 throw PingError.socketOptionsSetError(err: err)
             }
+            
+            // Set TTL
+            if var ttl = configuration.timeToLive {
+                let err = setsockopt(handle, IPPROTO_IP, IP_TTL, &ttl, socklen_t(MemoryLayout.size(ofValue: ttl)))
+                guard err == 0 else {
+                    throw PingError.socketOptionsSetError(err: err)
+                }
+            }
+            
+            // ...and add it to the main run loop.
+            socketSource = CFSocketCreateRunLoopSource(nil, socket, 0)
+            CFRunLoopAddSource(CFRunLoopGetMain(), socketSource, .commonModes)
         }
-        
-        // ...and add it to the main run loop.
-        socketSource = CFSocketCreateRunLoopSource(nil, socket, 0)
-        CFRunLoopAddSource(CFRunLoopGetMain(), socketSource, .commonModes)
     }
 
     // MARK: - Tear-down
-    deinit {
+    private func tearDown() {
         if socketSource != nil {
             CFRunLoopSourceInvalidate(socketSource)
             socketSource = nil
@@ -306,8 +311,13 @@ public class SwiftyPing: NSObject {
             CFSocketInvalidate(socket)
             socket = nil
         }
+        unmanagedSocketInfo?.release()
+        unmanagedSocketInfo = nil
         timeoutTimer?.invalidate()
         timeoutTimer = nil
+    }
+    deinit {
+        tearDown()
     }
 
     // MARK: - Single ping
@@ -315,20 +325,20 @@ public class SwiftyPing: NSObject {
     private var _isPinging = false
     private var isPinging: Bool {
         get {
-            return _serial.sync { self._isPinging }
+            return _serial_property.sync { self._isPinging }
         }
         set {
-            _serial.sync { self._isPinging = newValue }
+            _serial_property.sync { self._isPinging = newValue }
         }
     }
 
     private var _timeoutTimer: Timer?
     private var timeoutTimer: Timer? {
         get {
-            return _serial.sync { self._timeoutTimer }
+            return _serial_property.sync { self._timeoutTimer }
         }
         set {
-            _serial.sync { self._timeoutTimer = newValue }
+            _serial_property.sync { self._timeoutTimer = newValue }
         }
     }
         
@@ -343,7 +353,7 @@ public class SwiftyPing: NSObject {
         RunLoop.main.add(timer, forMode: .common)
         self.timeoutTimer = timer
 
-        currentQueue.async {
+        _serial.async {
             let address = self.destination.ipv4Address
             do {
                 let icmpPackage = try self.createICMPPackage(identifier: UInt16(self.identifier), sequenceNumber: UInt16(self.sequenceIndex))
@@ -431,33 +441,41 @@ public class SwiftyPing: NSObject {
     
     // MARK: - Continuous ping
     
-    private func shouldSchedulePing() -> Bool {
-        if killswitch { return false }
+    private func isTargetCountReached() -> Bool {
         if let target = targetCount {
-            if sequenceIndex < target {
+            if sequenceIndex >= target {
                 return true
             }
-            return false
         }
+        return false
+    }
+    
+    private func shouldSchedulePing() -> Bool {
+        if killswitch { return false }
+        if isTargetCountReached() { return false }
         return true
     }
     private func scheduleNextPing() {
+        if isTargetCountReached() && configuration.haltAfterTarget {
+            haltPinging()
+        }
         if shouldSchedulePing() {
-            currentQueue.asyncAfter(deadline: .now() + configuration.pingInterval) {
+            _serial.asyncAfter(deadline: .now() + configuration.pingInterval) {
                 self.sendPing()
             }
         }
     }
     
     private let _serial = DispatchQueue(label: "SwiftyPing internal")
-    
+    private let _serial_property = DispatchQueue(label: "SwiftyPing internal property")
+
     private var _killswitch = false
     private var killswitch: Bool {
         get {
-            return _serial.sync { self._killswitch }
+            return _serial_property.sync { self._killswitch }
         }
         set {
-            _serial.sync { self._killswitch = newValue }
+            _serial_property.sync { self._killswitch = newValue }
         }
     }
     
@@ -485,11 +503,7 @@ public class SwiftyPing: NSObject {
     /// - Parameter resetSequence: Controls whether the sequence index should be set back to zero.
     public func haltPinging(resetSequence: Bool = true) {
         stopPinging(resetSequence: resetSequence)
-        if socketSource != nil {
-            CFRunLoopSourceInvalidate(socketSource)
-        }
-        socketSource = nil
-        socket = nil
+        tearDown()
     }
     
     private func incrementSequenceIndex() {
@@ -713,6 +727,8 @@ public struct PingConfiguration {
     public var timeToLive: Int?
     /// Payload size in bytes. The payload always includes a fingerprint, and a payload size smaller than the fingerprint is ignored. By default, only the fingerprint is included in the payload.
     public var payloadSize: Int = MemoryLayout<uuid_t>.size
+    /// If set to `true`, when `targetCount` is reached (if set), the pinging will be halted instead of stopped. This means that the socket will be released and will be recreated if more pings are requested. Defaults to `true`.
+    public var haltAfterTarget: Bool = true
 
     /// Initializes a `PingConfiguration` object with the given parameters.
     /// - Parameter interval: The time between consecutive pings in seconds. Defaults to 1.
