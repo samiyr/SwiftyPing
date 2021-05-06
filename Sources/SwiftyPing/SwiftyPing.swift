@@ -14,6 +14,7 @@ import UIKit
 #endif
 
 public typealias Observer = ((_ response: PingResponse) -> Void)
+public typealias FinishedCallback = ((_ result: PingResult) -> Void)
 
 /// Represents a ping delegate.
 public protocol PingDelegate {
@@ -149,16 +150,19 @@ public class SwiftyPing: NSObject {
     public let configuration: PingConfiguration
     /// This closure gets called with ping responses.
     public var observer: Observer?
+    /// This closure gets called when pinging stops, either when `targetCount` is reached or pinging is stopped explicitly with `stop()` or `halt()`.
+    public var finished: FinishedCallback?
     /// This delegate gets called with ping responses.
     public var delegate: PingDelegate?
     /// The number of pings to make. Default is `nil`, which means no limit.
     public var targetCount: Int?
-    
+
     /// The current ping count, starting from 0.
     public var currentCount: Int {
         return sequenceIndex
     }
-
+    /// Array of all ping responses sent to the `observer`.
+    public private(set) var responses: [PingResponse] = []
     /// A random identifier which is a part of the ping request.
     private let identifier = UInt16.random(in: 0..<UInt16.max)
     /// A random UUID fingerprint sent as the payload.
@@ -172,10 +176,9 @@ public class SwiftyPing: NSObject {
     private var socketSource: CFRunLoopSource?
     /// An unmanaged instance of `SocketInfo` used in the current socket's callback. This must be released manually, otherwise it will leak.
     private var unmanagedSocketInfo: Unmanaged<SocketInfo>?
-
     
     /// When the current request was sent.
-    private var sequenceStart: Date?
+    private var sequenceStart = Date()
     /// The current sequence number.
     private var _sequenceIndex = 0
     private var sequenceIndex: Int {
@@ -406,11 +409,8 @@ public class SwiftyPing: NSObject {
         }
     }
     
-    private var timeIntervalSinceStart: TimeInterval? {
-        if let start = sequenceStart {
-            return Date().timeIntervalSince(start)
-        }
-        return nil
+    private var timeIntervalSinceStart: TimeInterval {
+        return Date().timeIntervalSince(sequenceStart)
     }
 
     @objc private func timeout() {
@@ -432,6 +432,7 @@ public class SwiftyPing: NSObject {
     }
     
     private func informObserver(of response: PingResponse) {
+        responses.append(response)
         if killswitch { return }
         currentQueue.sync {
             self.observer?(response)
@@ -456,13 +457,35 @@ public class SwiftyPing: NSObject {
         return true
     }
     private func scheduleNextPing() {
-        if isTargetCountReached() && configuration.haltAfterTarget {
-            haltPinging()
+        if isTargetCountReached() {
+            if configuration.haltAfterTarget {
+                haltPinging()
+            } else {
+                informFinishedStatus(sequenceIndex)
+            }
         }
         if shouldSchedulePing() {
             _serial.asyncAfter(deadline: .now() + configuration.pingInterval) {
                 self.sendPing()
             }
+        }
+    }
+    private func informFinishedStatus(_ sequenceIndex: Int) {
+        if let callback = finished {
+            var roundtrip: PingResult.Roundtrip? = nil
+            let roundtripTimes = responses.filter { $0.error == nil }.map { $0.duration }
+            if roundtripTimes.count != 0, let min = roundtripTimes.min(), let max = roundtripTimes.max() {
+                let count = Double(roundtripTimes.count)
+                let total = roundtripTimes.reduce(0, +)
+                let avg = total / count
+                let variance = roundtripTimes.reduce(0, { $0 + ($1 - avg) * ($1 - avg) })
+                let stddev = sqrt(variance / count)
+                
+                roundtrip = PingResult.Roundtrip(minimum: min, maximum: max, average: avg, standardDeviation: stddev)
+            }
+            
+            let result = PingResult(responses: responses, packetsTransmitted: sequenceIndex, packetsReceived: roundtripTimes.count, roundtrip: roundtrip)
+            callback(result)
         }
     }
     
@@ -493,11 +516,12 @@ public class SwiftyPing: NSObject {
     public func stopPinging(resetSequence: Bool = true) {
         killswitch = true
         isPinging = false
+        let count = sequenceIndex
         if resetSequence {
             sequenceIndex = 0
             erroredIndices.removeAll()
-            sequenceStart = nil
         }
+        informFinishedStatus(count)
     }
     /// Stops pinging the host and destroys the CFSocket object.
     /// - Parameter resetSequence: Controls whether the sequence index should be set back to zero.
@@ -707,13 +731,41 @@ public struct PingResponse {
     /// Running sequence number, starting from 0.
     public let sequenceNumber: Int
     /// Roundtrip time.
-    public let duration: TimeInterval?
+    public let duration: TimeInterval
     /// An error associated with the response.
     public let error: PingError?
     /// Response data packet size in bytes.
     public let byteCount: Int?
     /// Response IP header.
     public let ipHeader: IPHeader?
+}
+/// A struct encapsulating the results of a ping instance.
+public struct PingResult {
+    /// A struct encapsulating the roundtrip statistics.
+    public struct Roundtrip {
+        /// The smallest roundtrip time.
+        public let minimum: Double
+        /// The largest roundtrip time.
+        public let maximum: Double
+        /// The average (mean) roundtrip time.
+        public let average: Double
+        /// The standard deviation of the roundtrip times.
+        /// - Note: Standard deviation is calculated without Bessel's correction and thus gives zero if only one packet is received.
+        public let standardDeviation: Double
+    }
+    /// Collection of all responses, including errored or timed out.
+    public let responses: [PingResponse]
+    /// Number of packets sent.
+    public let packetsTransmitted: Int
+    /// Number of packets received.
+    public let packetsReceived: Int
+    /// The packet loss. If the number of packets transmitted (`packetsTransmitted`) is zero, returns `nil`.
+    public var packetLoss: Double? {
+        if packetsTransmitted == 0 { return nil }
+        return 1 - Double(packetsReceived) / Double(packetsTransmitted)
+    }
+    /// Roundtrip statistics, including min, max, average and stddev.
+    public let roundtrip: Roundtrip?
 }
 /// Controls pinging behaviour.
 public struct PingConfiguration {

@@ -8,7 +8,6 @@
 
 import Foundation
 import Darwin
-import Accelerate
 
 #if os(iOS)
 import UIKit
