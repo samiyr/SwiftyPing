@@ -151,19 +151,18 @@ public class SwiftyPing: NSObject {
     public let configuration: PingConfiguration
     /// This closure gets called with ping responses.
     public var observer: Observer?
-    
+    /// This closure gets called when pinging stops, either when `targetCount` is reached or pinging is stopped explicitly with `stop()` or `halt()`.
     public var finished: FinishedCallback?
-    
     /// This delegate gets called with ping responses.
     public var delegate: PingDelegate?
     /// The number of pings to make. Default is `nil`, which means no limit.
     public var targetCount: Int?
-    
+
     /// The current ping count, starting from 0.
     public var currentCount: Int {
         return sequenceIndex
     }
-    
+    /// Array of all ping responses sent to the `observer`.
     public private(set) var responses: [PingResponse] = []
     /// A random identifier which is a part of the ping request.
     private let identifier = UInt16.random(in: 0..<UInt16.max)
@@ -178,7 +177,6 @@ public class SwiftyPing: NSObject {
     private var socketSource: CFRunLoopSource?
     /// An unmanaged instance of `SocketInfo` used in the current socket's callback. This must be released manually, otherwise it will leak.
     private var unmanagedSocketInfo: Unmanaged<SocketInfo>?
-
     
     /// When the current request was sent.
     private var sequenceStart = Date()
@@ -742,22 +740,32 @@ public struct PingResponse {
     /// Response IP header.
     public let ipHeader: IPHeader?
 }
+/// A struct encapsulating the results of a ping instance.
 public struct PingResult {
+    /// A struct encapsulating the roundtrip statistics.
     public struct Roundtrip {
+        /// The smallest roundtrip time.
         public let minimum: Double
+        /// The largest roundtrip time.
         public let maximum: Double
+        /// The average (mean) roundtrip time.
         public let average: Double
+        /// The standard deviation of the roundtrip times.
+        /// - Note: Standard deviation is calculated without Bessel's correction and thus gives zero if only one packet is received.
         public let standardDeviation: Double
     }
+    /// Collection of all responses, including errored or timed out.
     public let responses: [PingResponse]
-    
+    /// Number of packets sent.
     public let packetsTransmitted: Int
+    /// Number of packets received.
     public let packetsReceived: Int
+    /// The packet loss. If the number of packets transmitted (`packetsTransmitted`) is zero, returns `nil`.
     public var packetLoss: Double? {
         if packetsTransmitted == 0 { return nil }
         return 1 - Double(packetsReceived) / Double(packetsTransmitted)
     }
-    
+    /// Roundtrip statistics, including min, max, average and stddev.
     public let roundtrip: Roundtrip?
 }
 /// Controls pinging behaviour.
