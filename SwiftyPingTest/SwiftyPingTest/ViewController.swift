@@ -42,7 +42,7 @@ class ViewController: UIViewController {
                             message = error.localizedDescription
                         }
                     }
-                    self.textView.text.append(contentsOf: "\nPing #\(response.sequenceNumber): \(message)")
+                    self.textView.text.append(contentsOf: "\nPing #\(response.trueSequenceNumber): \(message)")
                     self.textView.scrollRangeToVisible(NSRange(location: self.textView.text.count - 1, length: 1))
                 }
             }

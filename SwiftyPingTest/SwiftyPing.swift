@@ -43,7 +43,7 @@ public enum PingError: Error, Equatable {
     /// Response `identifier` doesn't match what was sent.
     case identifierMismatch(received: UInt16, expected: UInt16)
     /// Response `sequenceNumber` doesn't match.
-    case invalidSequenceIndex(received: Int, expected: Int)
+    case invalidSequenceIndex(received: UInt16, expected: UInt16)
     
     // Host resolve errors
     /// Unknown error occured within host lookup.
@@ -158,8 +158,8 @@ public class SwiftyPing: NSObject {
     public var targetCount: Int?
 
     /// The current ping count, starting from 0.
-    public var currentCount: Int {
-        return sequenceIndex
+    public var currentCount: UInt64 {
+        return trueSequenceIndex
     }
     /// Array of all ping responses sent to the `observer`.
     public private(set) var responses: [PingResponse] = []
@@ -180,13 +180,23 @@ public class SwiftyPing: NSObject {
     /// When the current request was sent.
     private var sequenceStart = Date()
     /// The current sequence number.
-    private var _sequenceIndex = 0
-    private var sequenceIndex: Int {
+    private var _sequenceIndex: UInt16 = 0
+    private var sequenceIndex: UInt16 {
         get {
             _serial_property.sync { self._sequenceIndex }
         }
         set {
             _serial_property.sync { self._sequenceIndex = newValue }
+        }
+    }
+    /// The true sequence number.
+    private var _trueSequenceIndex: UInt64 = 0
+    private var trueSequenceIndex: UInt64 {
+        get {
+            _serial_property.sync { self._trueSequenceIndex }
+        }
+        set {
+            _serial_property.sync { self._trueSequenceIndex = newValue }
         }
     }
     
@@ -375,12 +385,13 @@ public class SwiftyPing: NSObject {
                     let response = PingResponse(identifier: self.identifier,
                                                 ipAddress: self.destination.ip,
                                                 sequenceNumber: self.sequenceIndex,
+                                                trueSequenceNumber: self.trueSequenceIndex,
                                                 duration: self.timeIntervalSinceStart,
                                                 error: error,
                                                 byteCount: nil,
                                                 ipHeader: nil)
                    
-                    self.erroredIndices.append(self.sequenceIndex)
+                    self.erroredIndices.append(Int(self.sequenceIndex))
                     self.isPinging = false
                     self.informObserver(of: response)
                     
@@ -396,11 +407,12 @@ public class SwiftyPing: NSObject {
                 let response = PingResponse(identifier: self.identifier,
                                             ipAddress: self.destination.ip,
                                             sequenceNumber: self.sequenceIndex,
+                                            trueSequenceNumber: self.trueSequenceIndex,
                                             duration: self.timeIntervalSinceStart,
                                             error: pingError,
                                             byteCount: nil,
                                             ipHeader: nil)
-                self.erroredIndices.append(self.sequenceIndex)
+                self.erroredIndices.append(Int(self.sequenceIndex))
                 self.isPinging = false
                 self.informObserver(of: response)
                 
@@ -418,12 +430,13 @@ public class SwiftyPing: NSObject {
         let response = PingResponse(identifier: self.identifier,
                                     ipAddress: self.destination.ip,
                                     sequenceNumber: self.sequenceIndex,
+                                    trueSequenceNumber: self.trueSequenceIndex,
                                     duration: timeIntervalSinceStart,
                                     error: error,
                                     byteCount: nil,
                                     ipHeader: nil)
         
-        erroredIndices.append(sequenceIndex)
+        erroredIndices.append(Int(sequenceIndex))
         self.isPinging = false
         informObserver(of: response)
 
@@ -461,7 +474,7 @@ public class SwiftyPing: NSObject {
             if configuration.haltAfterTarget {
                 haltPinging()
             } else {
-                informFinishedStatus(sequenceIndex)
+                informFinishedStatus(trueSequenceIndex)
             }
         }
         if shouldSchedulePing() {
@@ -470,7 +483,7 @@ public class SwiftyPing: NSObject {
             }
         }
     }
-    private func informFinishedStatus(_ sequenceIndex: Int) {
+    private func informFinishedStatus(_ sequenceIndex: UInt64) {
         if let callback = finished {
             var roundtrip: PingResult.Roundtrip? = nil
             let roundtripTimes = responses.filter { $0.error == nil }.map { $0.duration }
@@ -484,7 +497,7 @@ public class SwiftyPing: NSObject {
                 roundtrip = PingResult.Roundtrip(minimum: min, maximum: max, average: avg, standardDeviation: stddev)
             }
             
-            let result = PingResult(responses: responses, packetsTransmitted: sequenceIndex, packetsReceived: roundtripTimes.count, roundtrip: roundtrip)
+            let result = PingResult(responses: responses, packetsTransmitted: sequenceIndex, packetsReceived: UInt64(roundtripTimes.count), roundtrip: roundtrip)
             callback(result)
         }
     }
@@ -516,9 +529,10 @@ public class SwiftyPing: NSObject {
     public func stopPinging(resetSequence: Bool = true) {
         killswitch = true
         isPinging = false
-        let count = sequenceIndex
+        let count = trueSequenceIndex
         if resetSequence {
             sequenceIndex = 0
+            trueSequenceIndex = 0
             erroredIndices.removeAll()
         }
         informFinishedStatus(count)
@@ -532,10 +546,16 @@ public class SwiftyPing: NSObject {
     
     private func incrementSequenceIndex() {
         // Handle overflow gracefully
-        if sequenceIndex >= Int.max {
+        if sequenceIndex >= UInt16.max {
             sequenceIndex = 0
         } else {
             sequenceIndex += 1
+        }
+        
+        if trueSequenceIndex >= UInt64.max {
+            trueSequenceIndex = 0
+        } else {
+            trueSequenceIndex += 1
         }
     }
     
@@ -563,6 +583,7 @@ public class SwiftyPing: NSObject {
         let response = PingResponse(identifier: identifier,
                                     ipAddress: destination.ip,
                                     sequenceNumber: sequenceIndex,
+                                    trueSequenceNumber: trueSequenceIndex,
                                     duration: timeIntervalSinceStart,
                                     error: validationError,
                                     byteCount: data.count,
@@ -675,7 +696,7 @@ public class SwiftyPing: NSObject {
                 // This response either errorred or timed out, ignore it
                 return false
             }
-            throw PingError.invalidSequenceIndex(received: Int(receivedSequenceIndex), expected: sequenceIndex)
+            throw PingError.invalidSequenceIndex(received: receivedSequenceIndex, expected: sequenceIndex)
         }
         return true
     }
@@ -729,7 +750,12 @@ public struct PingResponse {
     /// The IP address of the host.
     public let ipAddress: String?
     /// Running sequence number, starting from 0.
-    public let sequenceNumber: Int
+    /// This number will wrap to zero when it exceeds `UInt16.max`,
+    /// which is usually just 65535, and is the one used in the ping
+    /// protocol. See `trueSequenceNumber` for the actual count.
+    public let sequenceNumber: UInt16
+    /// The true sequence number.
+    public let trueSequenceNumber: UInt64
     /// Roundtrip time.
     public let duration: TimeInterval
     /// An error associated with the response.
@@ -756,9 +782,9 @@ public struct PingResult {
     /// Collection of all responses, including errored or timed out.
     public let responses: [PingResponse]
     /// Number of packets sent.
-    public let packetsTransmitted: Int
+    public let packetsTransmitted: UInt64
     /// Number of packets received.
-    public let packetsReceived: Int
+    public let packetsReceived: UInt64
     /// The packet loss. If the number of packets transmitted (`packetsTransmitted`) is zero, returns `nil`.
     public var packetLoss: Double? {
         if packetsTransmitted == 0 { return nil }
