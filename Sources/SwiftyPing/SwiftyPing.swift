@@ -532,7 +532,7 @@ public class SwiftyPing: NSObject {
     
     private func incrementSequenceIndex() {
         // Handle overflow gracefully
-        if sequenceIndex >= Int.max {
+        if sequenceIndex >= UInt16.max {
             sequenceIndex = 0
         } else {
             sequenceIndex += 1
