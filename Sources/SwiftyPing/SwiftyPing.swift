@@ -374,7 +374,7 @@ public class SwiftyPing: NSObject {
                 guard let socket = self.socket else { return }
                 let socketError = CFSocketSendData(socket, address as CFData, icmpPackage as CFData, self.configuration.timeoutInterval)
 
-                if socketError != .success {
+                if socketError == .success {
                     var error: PingError?
                     
                     switch socketError {
