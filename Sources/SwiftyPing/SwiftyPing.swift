@@ -17,7 +17,7 @@ public typealias Observer = ((_ response: PingResponse) -> Void)
 public typealias FinishedCallback = ((_ result: PingResult) -> Void)
 
 /// Represents a ping delegate.
-public protocol PingDelegate {
+public protocol PingDelegate: AnyObject {
     /// Called when a ping response is received.
     /// - Parameter response: A `PingResponse` object representing the echo reply.
     func didReceive(response: PingResponse)
