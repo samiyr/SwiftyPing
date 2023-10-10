@@ -213,14 +213,14 @@ public class SwiftyPing: NSObject {
         super.init()
         try createSocket()
         
-        #if os(iOS)
+        #if os(iOS) && !targetEnvironment(macCatalyst)
         if configuration.handleBackgroundTransitions {
             addAppStateNotifications()
         }
         #endif
     }
     
-    #if os(iOS)
+    #if os(iOS) && !targetEnvironment(macCatalyst)
     /// Adds notification observers for iOS app state changes.
     private func addAppStateNotifications() {
         NotificationCenter.default.addObserver(self, selector: #selector(didEnterBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
